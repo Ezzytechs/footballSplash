@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+  AUTHOR
+  READER
+}
+
+enum ArticleStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  COMPLETED
+  POSTPONED
+  CANCELLED
+}
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  LOGIN
+}
+
+model User {
+  id              String         @id @default(uuid()) @db.Uuid
+  name            String
+  email           String         @unique
+  password        String
+  role            UserRole       @default(READER)
+  isActive        Boolean        @default(true)
+  emailVerifiedAt DateTime?
+  articles        Article[]
+  comments        Comment[]
+  bookmarks       Bookmark[]
+  articleLikes    ArticleLike[]
+  commentLikes    CommentLike[]
+  refreshTokens   RefreshToken[]
+  otpCodes        OtpCode[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model OtpCode {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @db.Uuid
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  purpose    OtpPurpose
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, purpose, createdAt])
+  @@map("otp_codes")
+}
+
+model Category {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  articles    Article[]
+  createdAt   DateTime  @default(now())
+
+  @@map("categories")
+}
+
+model Article {
+  id          String        @id @default(uuid()) @db.Uuid
+  title       String
+  slug        String        @unique
+  excerpt     String?
+  content     String        @db.Text
+  coverImage  String?
+  status      ArticleStatus @default(DRAFT)
+  isFeatured  Boolean       @default(false)
+  views       Int           @default(0)
+  images      String[]      @default([])
+  publishedAt DateTime?
+  authorId    String        @db.Uuid
+  categoryId  String        @db.Uuid
+  author      User          @relation(fields: [authorId], references: [id])
+  category    Category      @relation(fields: [categoryId], references: [id])
+  tags        ArticleTag[]
+  comments    Comment[]
+  bookmarks   Bookmark[]
+  likes       ArticleLike[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([status, publishedAt])
+  @@index([categoryId, status])
+  @@index([authorId])
+  @@map("articles")
+}
+
+model Tag {
+  id       String       @id @default(uuid()) @db.Uuid
+  name     String       @unique
+  slug     String       @unique
+  articles ArticleTag[]
+
+  @@map("tags")
+}
+
+model ArticleTag {
+  articleId String  @db.Uuid
+  tagId     String  @db.Uuid
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@map("article_tags")
+}
+
+model Comment {
+  id        String        @id @default(uuid()) @db.Uuid
+  content   String        @db.Text
+  userId    String        @db.Uuid
+  articleId String        @db.Uuid
+  parentId  String?       @db.Uuid
+  user      User          @relation(fields: [userId], references: [id])
+  article   Article       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  parent    Comment?      @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[]     @relation("CommentReplies")
+  likes     CommentLike[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([articleId, createdAt])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model Bookmark {
+  userId    String   @db.Uuid
+  articleId String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, articleId])
+  @@map("bookmarks")
+}
+
+model ArticleLike {
+  userId    String   @db.Uuid
+  articleId String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, articleId])
+  @@index([articleId])
+  @@map("article_likes")
+}
+
+model CommentLike {
+  userId    String   @db.Uuid
+  commentId String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, commentId])
+  @@index([commentId])
+  @@map("comment_likes")
+}
+
+model Sport {
+  id    String @id @default(uuid()) @db.Uuid
+  name  String @unique
+  slug  String @unique
+  teams Team[]
+
+  @@map("sports")
+}
+
+model Team {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String  @unique
+  logoUrl     String?
+  sportId     String  @db.Uuid
+  sport       Sport   @relation(fields: [sportId], references: [id])
+  homeMatches Match[] @relation("HomeTeam")
+  awayMatches Match[] @relation("AwayTeam")
+
+  @@index([sportId])
+  @@map("teams")
+}
+
+model Match {
+  id          String      @id @default(uuid()) @db.Uuid
+  homeTeamId  String      @db.Uuid
+  awayTeamId  String      @db.Uuid
+  homeTeam    Team        @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam    Team        @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  competition String
+  kickoffAt   DateTime
+  status      MatchStatus @default(SCHEDULED)
+  homeScore   Int?
+  awayScore   Int?
+  venue       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([kickoffAt, status])
+  @@map("matches")
+}
