@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
 import { ArticlesModule } from './articles/articles.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
@@ -23,5 +24,6 @@ import { TagsModule } from './tags/tags.module';
     ArticlesModule,
     CommentsModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

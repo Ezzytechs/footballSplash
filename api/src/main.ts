@@ -25,6 +25,7 @@ async function bootstrap() {
     .setTitle('SportNews API')
     .setDescription('Sports news, articles, teams, and match fixtures')
     .setVersion('1.0')
+    .addTag('App', 'API availability and health checks')
     .addBearerAuth()
     .build();
 
