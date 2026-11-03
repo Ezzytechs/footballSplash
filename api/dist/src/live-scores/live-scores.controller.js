@@ -35,3 +35,4 @@ exports.LiveScoresController = LiveScoresController = __decorate([
     (0, public_decorator_1.Public)(),
     __metadata("design:paramtypes", [live_scores_service_1.LiveScoresService])
 ], LiveScoresController);
+//# sourceMappingURL=live-scores.controller.js.map

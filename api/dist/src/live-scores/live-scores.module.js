@@ -22,3 +22,4 @@ exports.LiveScoresModule = LiveScoresModule = __decorate([
         exports: [live_scores_service_1.LiveScoresService],
     })
 ], LiveScoresModule);
+//# sourceMappingURL=live-scores.module.js.map

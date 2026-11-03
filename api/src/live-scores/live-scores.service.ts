@@ -150,9 +150,9 @@ export class LiveScoresService {
       const leagues = leaguePayload.response?.leagues ?? [];
       const leagueById = new Map(leagues.map((league) => [league.id, league.name]));
 
-      // Live `leagueId` and the league `id` are different numeric namespaces on
-      // this provider, so map by id where they line up and fall back to
-      // `tournamentStage` otherwise.
+      // Live `leagueId` and the league `id` share a namespace, but the
+      // catalogue only lists ~127 competitions, so lower divisions and youth
+      // cups fall through. Name those by their id so grouping stays stable.
       const matches: LiveMatch[] = liveMatches.map((match) => ({
         id: String(match.id),
         homeTeam: match.home.name,
@@ -163,7 +163,7 @@ export class LiveScoresService {
         scheduledAt: match.timeTS ? new Date(match.timeTS).toISOString() : null,
         league:
           leagueById.get(match.leagueId) ??
-          (match.tournamentStage ? `Stage ${match.tournamentStage}` : null),
+          (match.leagueId ? `Competition ${match.leagueId}` : null),
       }));
 
       // Distinct, ordered league groups for the "View all" step.

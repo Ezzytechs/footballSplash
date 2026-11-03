@@ -86,7 +86,7 @@ let LiveScoresService = LiveScoresService_1 = class LiveScoresService {
                 status: match.status.ongoing ? 'LIVE' : 'UPCOMING',
                 scheduledAt: match.timeTS ? new Date(match.timeTS).toISOString() : null,
                 league: leagueById.get(match.leagueId) ??
-                    (match.tournamentStage ? `Stage ${match.tournamentStage}` : null),
+                    (match.leagueId ? `Competition ${match.leagueId}` : null),
             }));
             const groups = new Map();
             for (const match of matches) {
@@ -116,3 +116,4 @@ exports.LiveScoresService = LiveScoresService = LiveScoresService_1 = __decorate
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [config_1.ConfigService])
 ], LiveScoresService);
+//# sourceMappingURL=live-scores.service.js.map
