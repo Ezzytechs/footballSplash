@@ -7,6 +7,9 @@ import type { LiveMatch } from '../api/types'
 /** Statuses the provider reports while a fixture is still in progress. */
 const LIVE_STATES = new Set(['L', 'LIVE', 'PLAYING', 'HT', 'P1', 'P2'])
 
+/** Group label for competitions the provider's catalogue does not name. */
+const OTHERS = 'Others'
+
 function isLiveMatch(match: LiveMatch) {
   return LIVE_STATES.has(match.status)
 }
@@ -217,7 +220,7 @@ export function LiveScoresPage() {
   const grouped = useMemo(() => {
     const buckets = new Map<string, LiveMatch[]>()
     for (const match of matches) {
-      const key = match.league ?? 'Unassigned'
+      const key = match.league ?? OTHERS
       const bucket = buckets.get(key)
       if (bucket) bucket.push(match)
       else buckets.set(key, [match])
@@ -230,15 +233,11 @@ export function LiveScoresPage() {
   }, [matches])
 
   const ordered = useMemo(() => {
-    const named = grouped.filter(
-      (g) => !/^Competition \d+$/.test(g.league) && g.league !== 'Unassigned',
-    )
-    const unnamed = grouped.filter(
-      (g) => /^Competition \d+$/.test(g.league) || g.league === 'Unassigned',
-    )
-    named.sort((a, b) => b.live - a.live || a.league.localeCompare(b.league))
-    unnamed.sort((a, b) => b.live - a.live || b.matches.length - a.matches.length)
-    return [...named, ...unnamed]
+    const named = grouped
+      .filter((group) => group.league !== OTHERS)
+      .sort((a, b) => b.live - a.live || a.league.localeCompare(b.league))
+    const others = grouped.filter((group) => group.league === OTHERS)
+    return [...named, ...others]
   }, [grouped])
 
   const visible = activeLeague

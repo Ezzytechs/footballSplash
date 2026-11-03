@@ -84,7 +84,7 @@ function MatchRow({ match }: { match: LiveMatch }) {
   )
 }
 
-/** Last five live or upcoming matches, the football fan's pivot on the homepage. */ 
+/** The ten freshest live matches, the football fan's pivot on the homepage. */ 
 export function LiveScoreSection() {
   const { theme } = useTheme()
   const isDark = theme === 'night'
@@ -134,10 +134,19 @@ export function LiveScoreSection() {
         </div>
       ) : (
         <>
-          {matches.slice(0, 5).map((match) => (
+          {matches.slice(0, 10).map((match) => (
             <MatchRow key={match.id} match={match} />
           ))}
-          {matches.length > 5 && (
+          {matches.length === 0 && (
+            <p
+              className={`mt-3 rounded-xl border border-dashed p-4 text-center text-[11px] font-semibold ${
+                isDark ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-400'
+              }`}
+            >
+              No live matches right now. Check back at kick-off.
+            </p>
+          )}
+          {matches.length > 10 && (
             <div className="mt-2 text-center">
               <Link
                 to="/live-scores"

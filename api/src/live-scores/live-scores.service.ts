@@ -4,11 +4,9 @@ import { ConfigService } from '@nestjs/config';
 
 /** A single live match from the provider, plus an optional league name.
  *
- * `leagueId` on the live payload is its own numeric namespace and does not
- * line up with the league `id`s the provider uses in
- * `football-get-all-leagues`, so league names are resolved best-effort: the
- * service builds a league `id -> name` map from the leagues endpoint and
- * falls back to the match's `tournamentStage` when no league matches.
+ * Each fixture carries a `leagueId`, which is resolved to a competition name
+ * through the `football-get-all-leagues` catalogue. Competitions the catalogue
+ * does not list are grouped under "Others".
  */
 export interface RapidLiveMatch {
   id: number;
@@ -67,6 +65,9 @@ export type LiveMatch = {
   scheduledAt: string | null;
   league: string | null;
 };
+
+/** Group label used for competitions the catalogue does not name. */
+export const OTHERS_LEAGUE = 'Others';
 
 /** One group of live matches under a single league. */
 export interface LiveMatchGroup {
@@ -150,9 +151,9 @@ export class LiveScoresService {
       const leagues = leaguePayload.response?.leagues ?? [];
       const leagueById = new Map(leagues.map((league) => [league.id, league.name]));
 
-      // Live `leagueId` and the league `id` share a namespace, but the
-      // catalogue only lists ~127 competitions, so lower divisions and youth
-      // cups fall through. Name those by their id so grouping stays stable.
+      // `leagueId` is resolved against the all-leagues catalogue. Competitions
+      // missing from that list (lower divisions, youth cups) pool into a single
+      // "Others" group rather than surfacing raw ids.
       const matches: LiveMatch[] = liveMatches.map((match) => ({
         id: String(match.id),
         homeTeam: match.home.name,
@@ -161,34 +162,28 @@ export class LiveScoresService {
         awayScore: match.away.score == null ? null : match.away.score,
         status: match.status.ongoing ? 'LIVE' : 'UPCOMING',
         scheduledAt: match.timeTS ? new Date(match.timeTS).toISOString() : null,
-        league:
-          leagueById.get(match.leagueId) ??
-          (match.leagueId ? `Competition ${match.leagueId}` : null),
+        league: leagueById.get(match.leagueId) ?? OTHERS_LEAGUE,
       }));
 
-      // Distinct, ordered league groups for the "View all" step.
       const groups = new Map<string, LiveMatch[]>();
       for (const match of matches) {
-        const key = match.league ?? 'Unassigned';
+        const key = match.league ?? OTHERS_LEAGUE;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key)!.push(match);
       }
 
-      // Named competitions read first, then the id-only ones by match count,
-      // so the page leads with real league names instead of raw ids.
+      // Named competitions read alphabetically, with "Others" pinned last.
       const grouped = Array.from(groups.entries()).map(([league, group]) => ({
         league,
         count: group.length,
         matches: group,
       }));
       const named = grouped
-        .filter((g) => !/^Competition \d+$/.test(g.league) && g.league !== 'Unassigned')
+        .filter((group) => group.league !== OTHERS_LEAGUE)
         .sort((a, b) => a.league.localeCompare(b.league));
-      const unnamed = grouped
-        .filter((g) => /^Competition \d+$/.test(g.league) || g.league === 'Unassigned')
-        .sort((a, b) => b.count - a.count || a.league.localeCompare(b.league));
+      const others = grouped.filter((group) => group.league === OTHERS_LEAGUE);
 
-      return { matches, leagues: [...named, ...unnamed] };
+      return { matches, leagues: [...named, ...others] };
     } catch (error) {
       const axError = error as AxiosError;
       this.logger.error(
