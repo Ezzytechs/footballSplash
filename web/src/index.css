@@ -317,3 +317,15 @@
     max-height: var(--rail-max, none);
   }
 }
+
+/* Live-score rows fade in as each league group paints. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
