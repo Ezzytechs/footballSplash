@@ -174,14 +174,21 @@ export class LiveScoresService {
         groups.get(key)!.push(match);
       }
 
-      return {
-        matches,
-        leagues: Array.from(groups.entries()).map(([league, group]) => ({
-          league,
-          count: group.length,
-          matches: group,
-        })),
-      };
+      // Named competitions read first, then the id-only ones by match count,
+      // so the page leads with real league names instead of raw ids.
+      const grouped = Array.from(groups.entries()).map(([league, group]) => ({
+        league,
+        count: group.length,
+        matches: group,
+      }));
+      const named = grouped
+        .filter((g) => !/^Competition \d+$/.test(g.league) && g.league !== 'Unassigned')
+        .sort((a, b) => a.league.localeCompare(b.league));
+      const unnamed = grouped
+        .filter((g) => /^Competition \d+$/.test(g.league) || g.league === 'Unassigned')
+        .sort((a, b) => b.count - a.count || a.league.localeCompare(b.league));
+
+      return { matches, leagues: [...named, ...unnamed] };
     } catch (error) {
       const axError = error as AxiosError;
       this.logger.error(
