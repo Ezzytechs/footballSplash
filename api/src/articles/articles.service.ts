@@ -154,6 +154,34 @@ export class ArticlesService {
     };
   }
 
+  async findLiked(userId: string, query: QueryArticlesDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where = this.buildPublishedWhere(query);
+    where.likes = { some: { userId } };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.article.findMany({
+        where,
+        select: ARTICLE_LIST_SELECT,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.article.count({ where }),
+    ]);
+
+    return {
+      items: items.map((article) => formatArticle(article)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async findMine(userId: string, query: QueryMyArticlesDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -193,6 +221,22 @@ export class ArticlesService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /** Full detail including the body — for the author, or any editor/admin. */
+  async findDetailForEditor(actor: AuthenticatedUser, id: string) {
+    const article = await this.prisma.article.findUnique({
+      where: { id },
+      select: ARTICLE_DETAIL_SELECT,
+    });
+
+    if (!article) {
+      throw new NotFoundException('Article not found');
+    }
+
+    this.assertCanManage(actor, article.authorId);
+
+    return formatArticle(article);
   }
 
   async findPublishedBySlug(slug: string) {

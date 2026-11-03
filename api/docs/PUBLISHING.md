@@ -77,8 +77,8 @@ WhatsApp Channels have no official public posting API, so the supported route is
 Add to `.env`:
 
 ```env
-ARTICLE_WEBHOOK_URL=https://hook.eu1.make.com/xxxxxxxxxxxxxxx
-ARTICLE_WEBHOOK_SECRET=some-long-random-string
+ARTICLE_WEBHOOK_URL=https://hook.us2.make.com/37ic0qb1lxpe53vnfgqghuz7lb62hjon
+ARTICLE_WEBHOOK_SECRET=thslkjoeibjdk987786876876dfhgsuyuyg
 ```
 
 Restart the API and publish an article (see §3). Make now knows the payload shape.

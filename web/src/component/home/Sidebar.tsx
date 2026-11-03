@@ -1,7 +1,10 @@
+import type { CSSProperties } from 'react'
 import {
   ArrowLeftRight,
+  Bookmark,
   Flame,
   Globe,
+  Heart,
   Mail,
   Newspaper,
   Shirt,
@@ -9,8 +12,13 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useTagsQuery } from '../../api/queries'
+import { usePopularArticles, useTagsQuery } from '../../api/queries'
+import { useBookmarkedArticles, useLikedArticles } from '../../api/library'
+import { useAuth } from '../../auth/AuthContext'
+import { TrendingList } from '../post/SideRail'
 import { useTheme } from './themedContext'
+import { useCategorySlots } from './categorySlots'
+import { LiveScoreSection } from './LiveScoreSection'
 
 interface NavLink {
   label: string
@@ -18,41 +26,51 @@ interface NavLink {
   icon: LucideIcon
 }
 
-const QUICK_NAV: NavLink[] = [
+/** Icon per category slug; categories added later fall back to a generic one. */
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  'premier-league': Shirt,
+  'champions-league': Trophy,
+  transfers: ArrowLeftRight,
+  'world-football': Globe,
+}
+
+const BASE_NAV: NavLink[] = [
   { label: 'Top Stories', href: '#top-stories', icon: Flame },
   { label: 'Latest Headlines', href: '#latest-headlines', icon: Newspaper },
-  { label: 'Premier League', href: '#premier-league', icon: Shirt },
-  { label: 'Champions League', href: '#champions-league', icon: Trophy },
-  { label: 'Transfer Centre', href: '#transfers', icon: ArrowLeftRight },
-  { label: 'World Football', href: '#world-football', icon: Globe },
 ]
 
-const LIVE_MATCHES = [
-  { home: 'ARS', away: 'MCI', score: '2 - 1', minute: "67'", live: true },
-  { home: 'RMA', away: 'BAY', score: '1 - 1', minute: "HT", live: true },
-  { home: 'INT', away: 'NAP', score: '3 - 2', minute: "FT", live: false },
-]
-
-const STANDINGS = [
-  { pos: 1, team: 'Arsenal', p: 10, gd: '+18', pts: 25 },
-  { pos: 2, team: 'Man City', p: 10, gd: '+16', pts: 23 },
-  { pos: 3, team: 'Liverpool', p: 10, gd: '+12', pts: 21 },
-  { pos: 4, team: 'Chelsea', p: 10, gd: '+9', pts: 19 },
-  { pos: 5, team: 'Newcastle', p: 10, gd: '+6', pts: 17 },
-  { pos: 6, team: 'Spurs', p: 10, gd: '+4', pts: 16 },
-]
-
-const TOP_SCORERS = [
-  { name: 'E. Haaland', club: 'Man City', goals: 25, max: 25 },
-  { name: 'K. Mbappé', club: 'Real Madrid', goals: 21, max: 25 },
-  { name: 'H. Kane', club: 'Bayern', goals: 19, max: 25 },
-]
-
-export function Sidebar() {
+export function Sidebar({ railMaxHeight }: { railMaxHeight?: number | null }) {
   const { theme } = useTheme()
   const isDark = theme === 'night'
 
+  // Height comes from the main column, never the window: the rail sticks for
+  // as long as it fits inside the column and only scrolls when it does not.
+  const railMax = railMaxHeight ?? null
+
   const tags = useTagsQuery()
+  const popular = usePopularArticles(5)
+
+  // Shelf counters. One item per shelf is plenty — only meta.total is read,
+  // and the queries stay idle until there is a session to ask about.
+  const { status, user } = useAuth()
+  const signedIn = status === 'authenticated' && Boolean(user)
+  const savedShelf = useBookmarkedArticles(1, signedIn)
+  const likedShelf = useLikedArticles(1, signedIn)
+  const savedCount = signedIn ? (savedShelf.data?.meta.total ?? null) : null
+  const likedCount = signedIn ? (likedShelf.data?.meta.total ?? null) : null
+
+  // Four categories only: the navbar owns the first six and the page body
+  // owns the rest, so no category is listed twice on the site.
+  const { sidebar: railCategories } = useCategorySlots()
+  const quickNav: NavLink[] = [
+    ...BASE_NAV,
+    ...railCategories.map((category) => ({
+      label: category.name,
+      href: `/category/${category.slug}`,
+      icon: CATEGORY_ICONS[category.slug] ?? Newspaper,
+    })),
+  ]
+
   // Tag archives are reached from here; only tags actually used by a story.
   const trendingTags = (tags.data ?? [])
     .filter((tag) => (tag._count?.articles ?? 0) > 0)
@@ -61,18 +79,27 @@ export function Sidebar() {
   const card = isDark
     ? 'bg-zinc-900/50 border-zinc-800/80'
     : 'bg-white border-zinc-200/80'
-  const heading = isDark ? 'text-white' : 'text-zinc-900'
-  const muted = isDark ? 'text-zinc-400' : 'text-zinc-500'
-  const faint = isDark ? 'text-zinc-500' : 'text-zinc-400'
-  const rowBorder = isDark ? 'border-zinc-800/70' : 'border-zinc-200/70'
+  const widgetTitle = isDark ? 'text-white' : 'text-zinc-900'
   const navItem = isDark
     ? 'text-zinc-300 hover:bg-zinc-800/70 hover:text-yellow-400'
     : 'text-zinc-700 hover:bg-zinc-100 hover:text-yellow-600'
   const iconMuted = isDark ? 'text-zinc-500' : 'text-zinc-400'
-  const widgetTitle = isDark ? 'text-white' : 'text-zinc-900'
+  const muted = isDark ? 'text-zinc-400' : 'text-zinc-500'
+  const shelfTile = `flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-colors ${
+    isDark
+      ? 'border-zinc-800 bg-zinc-950/60 text-zinc-300 hover:border-yellow-400/60 hover:text-yellow-400'
+      : 'border-zinc-200 bg-zinc-50 text-zinc-700 hover:border-yellow-500/60 hover:text-yellow-600'
+  }`
 
   return (
-    <aside className="lg:col-span-4 self-start lg:sticky lg:top-44 lg:max-h-[calc(100vh-13.5rem)] lg:overflow-y-auto lg:pr-1 pb-2">
+    <aside
+      className="rail-max lg:col-span-4 self-start pb-2 lg:sticky lg:top-44 lg:overflow-y-auto lg:pr-1"
+      style={
+        railMax === null
+          ? undefined
+          : ({ '--rail-max': `${railMax}px` } as CSSProperties)
+      }
+    >
       <div className="space-y-5">
         {/* 1. Quick navigation */}
         <nav
@@ -86,22 +113,70 @@ export function Sidebar() {
             Browse
           </h3>
           <ul className="space-y-1">
-            {QUICK_NAV.map((link) => {
+            {quickNav.map((link) => {
               const Icon = link.icon
+              const linkClass = `flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold tracking-wide transition-colors ${navItem}`
               return (
                 <li key={link.label}>
-                  <a
-                    href={link.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-bold tracking-wide transition-colors ${navItem}`}
-                  >
-                    <Icon className={`w-4 h-4 shrink-0 ${iconMuted}`} />
-                    <span>{link.label}</span>
-                  </a>
+                  {link.href.startsWith('#') ? (
+                    <a href={link.href} className={linkClass}>
+                      <Icon className={`w-4 h-4 shrink-0 ${iconMuted}`} />
+                      <span>{link.label}</span>
+                    </a>
+                  ) : (
+                    <Link to={link.href} className={linkClass}>
+                      <Icon className={`w-4 h-4 shrink-0 ${iconMuted}`} />
+                      <span>{link.label}</span>
+                    </Link>
+                  )}
                 </li>
               )
             })}
           </ul>
         </nav>
+
+        {/* 1a. The reader's own shelves — same data as the /library dashboard */}
+        <section
+          className={`rounded-2xl border ${card} p-4`}
+          aria-label="My library"
+        >
+          <h3
+            className={`text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${widgetTitle}`}
+          >
+            <span className="w-1 h-4 bg-yellow-400 rounded-full" />
+            My Library
+          </h3>
+          <div className="grid grid-cols-2 gap-2">
+            <Link to="/library" className={shelfTile}>
+              <Bookmark className="w-4 h-4 text-yellow-500" />
+              <span className="text-lg font-extrabold leading-none">
+                {savedCount ?? '—'}
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-wider">
+                Saved
+              </span>
+            </Link>
+            <Link to="/library" className={shelfTile}>
+              <Heart className="w-4 h-4 text-red-500" />
+              <span className="text-lg font-extrabold leading-none">
+                {likedCount ?? '—'}
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-wider">
+                Liked
+              </span>
+            </Link>
+          </div>
+          <Link
+            to={signedIn ? '/library' : '/login'}
+            className={`mt-3 block rounded-lg px-3 py-2 text-center text-[11px] font-black uppercase tracking-wider transition-colors ${
+              isDark
+                ? 'bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800 hover:text-yellow-400'
+                : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 hover:text-yellow-600'
+            }`}
+          >
+            {signedIn ? 'Open my library' : 'Sign in to save stories'}
+          </Link>
+        </section>
 
         {/* 1b. Trending tags — the homepage's way into the tag archives */}
         {trendingTags.length > 0 && (
@@ -120,10 +195,9 @@ export function Sidebar() {
                 <Link
                   key={tag.id}
                   to={`/tag/${tag.slug}`}
-                  className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-colors ${
-                    isDark
-                      ? 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-yellow-400/60 hover:text-yellow-400'
-                      : 'border-zinc-200 bg-zinc-100 text-zinc-700 hover:border-yellow-500/60 hover:text-yellow-600'
+                  className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-wider transition-colors ${isDark
+                    ? 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-yellow-400/60 hover:text-yellow-400'
+                    : 'border-zinc-200 bg-zinc-100 text-zinc-700 hover:border-yellow-500/60 hover:text-yellow-600'
                   }`}
                 >
                   {tag.name}
@@ -133,150 +207,21 @@ export function Sidebar() {
           </section>
         )}
 
-        {/* 2. Live matches */}
-        <section className={`rounded-2xl border ${card} p-4`}>
-          <div className="flex items-center justify-between mb-3">
-            <h3
-              className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${widgetTitle}`}
-            >
-              <span className="w-1 h-4 bg-yellow-400 rounded-full" />
-              Live Matches
-            </h3>
-            <span className="flex items-center gap-1.5 text-[10px] font-black text-red-500 uppercase">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-              Live
-            </span>
-          </div>
-          <ul className="space-y-2">
-            {LIVE_MATCHES.map((match) => (
-              <li
-                key={`${match.home}-${match.away}`}
-                className={`flex items-center justify-between px-3 py-2.5 rounded-lg border ${
-                  isDark
-                    ? 'bg-zinc-950/50 border-zinc-800/70'
-                    : 'bg-zinc-50 border-zinc-200/70'
-                }`}
-              >
-                <div className="flex items-center gap-2 text-xs font-bold">
-                  <span className={heading}>{match.home}</span>
-                  <span className={faint}>vs</span>
-                  <span className={heading}>{match.away}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`text-xs font-black tabular-nums ${heading}`}
-                  >
-                    {match.score}
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold min-w-[26px] text-right ${
-                      match.live ? 'text-red-500' : faint
-                    }`}
-                  >
-                    {match.minute}
-                  </span>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        {/* 2. Most-read stories, straight from /articles/popular */}
+        <TrendingList articles={popular.data ?? []} />
 
-        {/* 3. Mini league table */}
-        <section className={`rounded-2xl border ${card} p-4`}>
-          <div className="flex items-center justify-between mb-3">
-            <h3
-              className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${widgetTitle}`}
-            >
-              <span className="w-1 h-4 bg-yellow-400 rounded-full" />
-              PL Standings
-            </h3>
-            <span className={`text-[10px] font-bold ${faint}`}>MW 10</span>
-          </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className={`text-[10px] uppercase ${faint}`}>
-                <th className="text-left font-bold pb-2 w-6">#</th>
-                <th className="text-left font-bold pb-2">Team</th>
-                <th className="text-right font-bold pb-2 w-8">P</th>
-                <th className="text-right font-bold pb-2 w-10">GD</th>
-                <th className="text-right font-bold pb-2 w-8">Pts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {STANDINGS.map((row) => (
-                <tr
-                  key={row.team}
-                  className={`border-t ${rowBorder} ${
-                    row.pos === 1 ? 'text-yellow-500' : heading
-                  }`}
-                >
-                  <td className="py-2 font-black">{row.pos}</td>
-                  <td className="py-2 font-semibold truncate">{row.team}</td>
-                  <td className={`py-2 text-right tabular-nums ${muted}`}>
-                    {row.p}
-                  </td>
-                  <td className={`py-2 text-right tabular-nums ${muted}`}>
-                    {row.gd}
-                  </td>
-                  <td className="py-2 text-right font-black tabular-nums">
-                    {row.pts}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        {/* 3. Live scores */}
+        <LiveScoreSection />
 
-        {/* 4. Golden boot race */}
-        <section className={`rounded-2xl border ${card} p-4`}>
-          <h3
-            className={`text-xs font-black uppercase tracking-widest mb-3 flex items-center gap-2 ${widgetTitle}`}
-          >
-            <span className="w-1 h-4 bg-yellow-400 rounded-full" />
-            Golden Boot Race
-          </h3>
-          <ul className="space-y-3">
-            {TOP_SCORERS.map((player, idx) => (
-              <li key={player.name}>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className={`font-bold flex items-center gap-2 ${heading}`}>
-                    <span className={faint}>{idx + 1}.</span>
-                    {player.name}
-                  </span>
-                  <span className={`font-semibold ${muted}`}>
-                    {player.club} ·{' '}
-                    <span className="font-black text-yellow-500">
-                      {player.goals}
-                    </span>
-                  </span>
-                </div>
-                <div
-                  className={`h-1.5 rounded-full overflow-hidden ${
-                    isDark ? 'bg-zinc-800' : 'bg-zinc-200'
-                  }`}
-                >
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-yellow-400 to-lime-400"
-                    style={{ width: `${(player.goals / player.max) * 100}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {/* 5. Newsletter */}
+        {/* 4. Newsletter */}
         <section
-          className={`rounded-2xl border p-4 ${
-            isDark
-              ? 'bg-yellow-400/10 border-yellow-400/30'
-              : 'bg-yellow-50 border-yellow-200'
+          className={`rounded-2xl border p-4 ${isDark
+            ? 'bg-yellow-400/10 border-yellow-400/30'
+            : 'bg-yellow-50 border-yellow-200'
           }`}
         >
           <h3
-            className={`text-xs font-black uppercase tracking-widest mb-1 flex items-center gap-2 ${
-              isDark ? 'text-yellow-400' : 'text-yellow-600'
-            }`}
+            className={`text-xs font-black uppercase tracking-widest mb-1 flex items-center gap-2 ${isDark ? 'text-yellow-400' : 'text-yellow-600'}`}
           >
             <Mail className="w-4 h-4" /> The Morning Kickoff
           </h3>
@@ -294,10 +239,9 @@ export function Sidebar() {
               type="email"
               required
               placeholder="you@email.com"
-              className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs focus:outline-none ${
-                isDark
-                  ? 'bg-zinc-950 border-zinc-800 text-white placeholder:text-zinc-600'
-                  : 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400'
+              className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-xs focus:outline-none ${isDark
+                ? 'bg-zinc-950 border-zinc-800 text-white placeholder:text-zinc-600'
+                : 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400'
               }`}
             />
             <button

@@ -100,6 +100,50 @@ export class StorageService implements OnModuleDestroy {
     return uploaded;
   }
 
+  async getFileStream(nodeId: string, folderName: string) {
+    const file = await this.findFile(nodeId);
+    const folder = await this.getFolder(folderName);
+    const name = `${folder.name}/${file.name}`;
+
+    // download() returns a Readable that streams the file from MEGA; pipe it
+    // straight to the response instead of buffering it in memory.
+    return {
+      stream: file.download({}),
+      name,
+      size: file.size,
+      mimetype: file.type,
+    };
+  }
+
+  async getFileInfo(nodeId: string, folderName: string) {
+    const file = await this.findFile(nodeId);
+    const folder = await this.getFolder(folderName);
+    const name = `${folder.name}/${file.name}`;
+
+    return {
+      name,
+      size: file.size,
+      mimetype: file.type,
+    };
+  }
+
+  async deleteFile(nodeId: string, folderName: string) {
+    const file = await this.findFile(nodeId);
+    const folder = await this.getFolder(folderName);
+    const name = `${folder.name}/${file.name}`;
+
+    try {
+      await file.delete();
+    } catch (error) {
+      this.logger.error(
+        `MEGA delete failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new InternalServerErrorException('Unable to delete the file');
+    }
+
+    return { message: 'File deleted' };
+  }
+
   async getLink(nodeId: string) {
     const file = await this.findFile(nodeId);
     const url = await file.link({});
@@ -127,6 +171,21 @@ export class StorageService implements OnModuleDestroy {
       await this.client.close();
       this.client = undefined;
     }
+  }
+
+  private async getFolder(folderName: string): Promise<MutableFile> {
+    const storage = await this.getClient();
+    const segments = folderName.split('/').filter(Boolean);
+    let folder = storage.root;
+
+    for (const segment of segments) {
+      const existing = folder.children?.find(
+        (child) => child.directory && child.name === segment,
+      );
+      folder = existing ?? (await folder.mkdir(segment));
+    }
+
+    return folder;
   }
 
   private async findFile(nodeId: string): Promise<MutableFile> {

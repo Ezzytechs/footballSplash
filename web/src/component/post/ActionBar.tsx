@@ -1,4 +1,4 @@
-import { Bookmark, BookmarkCheck, Heart, MessageCircle, Share2 } from 'lucide-react'
+import { Bookmark, BookmarkCheck, Heart, MessageCircle, Share2, Pencil } from 'lucide-react'
 import { useTheme } from '../home/themedContext'
 import { formatCount } from '../../lib/format'
 
@@ -11,6 +11,10 @@ export interface ActionBarProps {
   bookmarked: boolean
   onBookmark: () => void
   onShare: () => void
+  // True when the signed-in viewer is the article's author or an editor.
+  canEdit?: boolean
+  /** Opens the editor page for this article. */
+  onEdit?: () => void
 }
 
 /**
@@ -30,6 +34,8 @@ export function ActionBar(props: ActionBarProps & { variant: 'rail' | 'bar' }) {
     bookmarked,
     onBookmark,
     onShare,
+    canEdit = false,
+    onEdit,
     variant,
   } = props
 
@@ -89,6 +95,22 @@ export function ActionBar(props: ActionBarProps & { variant: 'rail' | 'bar' }) {
   if (variant === 'rail') {
     return (
       <div className="sticky top-44 flex flex-col items-center gap-2">
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              if (onEdit) onEdit()
+            }}
+            title="Edit this article"
+            aria-label="Edit this article"
+            className={`group flex w-14 flex-col items-center gap-1 rounded-2xl border px-1 py-3 transition-all ${surface} ${hover} ${active}`}
+          >
+            <Pencil className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-wider">
+              Edit
+            </span>
+          </button>
+        )}
         {items.map((item) => (
           <button
             key={item.key}
@@ -118,6 +140,22 @@ export function ActionBar(props: ActionBarProps & { variant: 'rail' | 'bar' }) {
       }`}
     >
       <div className="mx-auto flex max-w-7xl items-center justify-around px-4 py-2">
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => {
+              if (onEdit) onEdit()
+            }}
+            title="Edit this article"
+            aria-label="Edit this article"
+            className={`flex min-w-16 flex-col items-center gap-0.5 px-3 py-1.5 transition-colors ${isDark ? 'text-zinc-300' : 'text-zinc-600'} ${active ? active : ''}`}
+          >
+            <Pencil className="w-4 h-4" />
+            <span className="text-[10px] font-black uppercase tracking-wider">
+              Edit
+            </span>
+          </button>
+        )}
         {items.map((item) => (
           <button
             key={item.key}

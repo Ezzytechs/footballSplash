@@ -12,9 +12,28 @@ import type {
   CategoryWithCount,
   CommentNode,
   CommentThread,
+  LiveMatch,
   Paginated,
   TagWithCount,
 } from './types'
+
+/* ------------------------------------------------------ live sports */
+
+/** Current live-match fixture list for the live-scores section. */
+export function useLiveMatches() {
+  return useQuery({
+    queryKey: ['live-matches'],
+    queryFn: async () => {
+      const { data } = await api.get<{ matches: LiveMatch[]; leagues: { league: string; count: number }[] }>('/live-scores')
+      return data
+    },
+    // Live data changes as fixtures progress, so poll the provider at the
+    // same cadence the API honours (cache TTL). 30s keeps the homepage card
+    // feeling live without hammering the RapidAPI rate limit.
+    refetchInterval: 30_000,
+    staleTime: 0,
+  })
+}
 
 /* ---------------------------------------------------------- reads */
 
@@ -29,6 +48,60 @@ export function useArticleQuery(
       // Best-effort view counter; failures must never break the read.
       void api.post(`/articles/${data.slug}/view`).catch(() => undefined)
       return data
+    },
+  })
+}
+
+/**
+ * Races several read paths and settles on the first one that resolves.
+ *
+ * Article reads overlap: `/articles/mine/:id` returns a draft to the writer
+ * who owns it, while `/articles/:slug` returns anything published. An editor
+ * or admin who published the story themselves needs whichever route the API
+ * actually answers, so the first success wins. `Promise.any` resolves with
+ * the first fulfilment and only rejects once every candidate has failed.
+ */
+export function firstSuccessful<T>(paths: string[]): Promise<T | null> {
+  const attempts = paths.map((path) => api.get<T>(path).then(({ data }) => data))
+  if (attempts.length === 0) return Promise.resolve(null)
+  return Promise.any(attempts).catch(() => null)
+}
+
+/**
+ * Full article for the editor route. The dashboard links there with a slug,
+ * and a slug alone cannot resolve a draft on the public route, so the
+ * author-scoped routes (by id and by slug) race the public one.
+ */
+export function useEditableArticleQuery(
+  slug: string | undefined,
+  articleId?: string,
+): UseQueryResult<ArticleDetail | null> {
+  return useQuery({
+    queryKey: ['editable-article', slug, articleId],
+    enabled: Boolean(slug || articleId),
+    queryFn: () =>
+      firstSuccessful<ArticleDetail>(
+        [
+          articleId ? `/articles/mine/${articleId}` : null,
+          slug ? `/articles/mine/${slug}` : null,
+          slug ? `/articles/${slug}` : null,
+        ].filter((path): path is string => Boolean(path)),
+      ),
+  })
+}
+
+/**
+ * Newest published stories. The homepage slices this single feed into the
+ * hero grid, the latest-headlines rail and the per-category sections.
+ */
+export function useLatestArticles(limit = 30): UseQueryResult<ArticleSummary[]> {
+  return useQuery({
+    queryKey: ['latest', limit],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<ArticleSummary>>('/articles', {
+        params: { page: 1, limit },
+      })
+      return data.items
     },
   })
 }
@@ -127,6 +200,25 @@ export function useCategoryArticlesQuery(slug: string | undefined, limit = 6) {
   )
 }
 
+/** Single-page variant used by the homepage rails (not infinite scroll). */
+export function useCategoryArticles(
+  slug: string | undefined,
+  limit = 8,
+  enabled = true,
+): UseQueryResult<ArticleSummary[]> {
+  return useQuery({
+    queryKey: ['category-list', slug, limit],
+    enabled: Boolean(slug) && enabled,
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<ArticleSummary>>(
+        `/articles/category/${slug}`,
+        { params: { page: 1, limit } },
+      )
+      return data.items
+    },
+  })
+}
+
 export function useCommentsQuery(
   articleId: string | undefined,
   limit = 10,
@@ -158,8 +250,12 @@ export function useLikeArticle(
   const client = useQueryClient()
   return useMutation<LikeResult, unknown, { liked: boolean }>({
     mutationFn: async ({ liked }) => {
-      const path = `/articles/${articleId}/${liked ? 'unlike' : 'like'}`
-      const { data } = await api.post<LikeResult>(path)
+      // POST /articles/:id/like adds a like, DELETE removes it. There is no
+      // /unlike route — sending one 404s and the button silently does nothing.
+      const path = `/articles/${articleId}/like`
+      const { data } = liked
+        ? await api.delete<LikeResult>(path)
+        : await api.post<LikeResult>(path)
       return data
     },
     onSuccess: (data) => {
@@ -178,8 +274,11 @@ export interface BookmarkResult {
 export function useBookmarkArticle(articleId: string | undefined) {
   return useMutation<BookmarkResult, unknown, { bookmarked: boolean }>({
     mutationFn: async ({ bookmarked }) => {
-      const path = `/articles/${articleId}/${bookmarked ? 'unbookmark' : 'bookmark'}`
-      const { data } = await api.post<BookmarkResult>(path)
+      // POST /articles/:id/bookmark saves, DELETE un-saves.
+      const path = `/articles/${articleId}/bookmark`
+      const { data } = bookmarked
+        ? await api.delete<BookmarkResult>(path)
+        : await api.post<BookmarkResult>(path)
       return data
     },
   })
@@ -214,10 +313,10 @@ export function useLikeComment() {
     { commentId: string; liked: boolean; articleId?: string }
   >({
     mutationFn: async ({ commentId, liked }) => {
-      const path = `/comments/${commentId}/${liked ? 'unlike' : 'like'}`
-      const { data } = await api.post<{ liked: boolean; likeCount: number }>(
-        path,
-      )
+      const path = `/comments/${commentId}/like`
+      const { data } = liked
+        ? await api.delete<{ liked: boolean; likeCount: number }>(path)
+        : await api.post<{ liked: boolean; likeCount: number }>(path)
       return data
     },
     onSuccess: (_data, variables) => {

@@ -65,6 +65,40 @@ export class CommentsService {
     };
   }
 
+  /** The signed-in user's own comments, newest first, with the story each is on. */
+  async findMine(userId: string, query: QueryCommentsDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+
+    const where: Prisma.CommentWhereInput = { userId };
+
+    const select = {
+      ...COMMENT_BASE_SELECT,
+      article: { select: { id: true, title: true, slug: true } },
+    } satisfies Prisma.CommentSelect;
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.comment.findMany({
+        where,
+        select,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.comment.count({ where }),
+    ]);
+
+    return {
+      items,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async create(userId: string, articleId: string, dto: CreateCommentDto) {
     await this.assertPublishedArticle(articleId);
 

@@ -273,3 +273,47 @@
     font-size: 16px;
   }
 }
+
+/* Custom scrollbars — match the site theme */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(250, 204, 21, 0.35);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(250, 204, 21, 0.55);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(250, 204, 21, 0.35) transparent;
+}
+
+/* Vertical stack of category sections: each block scrolls inside the track,
+   no scrollbar is drawn under it. */
+.snap-track {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.snap-track::-webkit-scrollbar {
+  display: none;
+}
+
+/* The homepage right rail is capped by the main column's height (set inline
+   as --rail-max), so a short rail sticks and a tall one scrolls inside it. */
+@media (min-width: 1024px) {
+  .rail-max {
+    max-height: var(--rail-max, none);
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronRight, Eye, MessageCircle } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+
 import { Footer } from '../component/home/Footer'
 import { Navbar } from '../component/home/Navbar'
 import { ThemedApp } from '../component/home/ThemedApp'
@@ -21,6 +22,7 @@ import {
   useTagsQuery,
 } from '../api/queries'
 import type { ArticleDetail } from '../api/types'
+import { useAuth } from '../auth/AuthContext'
 import { parseSections } from '../lib/article'
 import { formatCount, initials, readTime, relativeTime } from '../lib/format'
 import { NoticeProvider } from '../lib/notice'
@@ -102,6 +104,16 @@ function PostBody({ article }: { article: ArticleDetail }) {
   const { theme } = useTheme()
   const isDark = theme === 'night'
   const notify = useNotice()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { status } = useAuth()
+
+  // Likes and saves need an account — send visitors to sign in for this story.
+  const requireAccount = () => {
+    if (status === 'authenticated') return false
+    navigate('/login', { state: { from: { pathname: location.pathname } } })
+    return true
+  }
 
   const similar = useSimilarArticles(article)
   const popular = usePopularArticles(5)
@@ -114,6 +126,13 @@ function PostBody({ article }: { article: ArticleDetail }) {
 
   const likeMutation = useLikeArticle(article.id, article.slug)
   const bookmarkMutation = useBookmarkArticle(article.id)
+
+  // A story is editable by its author, or by any editor or admin. Readers on
+  // someone else's story never see the Edit action.
+  const { user } = useAuth()
+  const isAuthor = user?.role === 'AUTHOR' && user.id === article.author.id
+  const canEdit =
+    isAuthor || user?.role === 'EDITOR' || user?.role === 'ADMIN'
 
   const sections = useMemo(() => parseSections(article.content), [article.content])
 
@@ -136,12 +155,22 @@ function PostBody({ article }: { article: ArticleDetail }) {
     return () => window.removeEventListener('scroll', update)
   }, [sections])
 
+  // Deep links from the profile (#comments) have to win against the global
+  // scroll-to-top on navigation, so the jump waits one frame.
+  useEffect(() => {
+    if (location.hash !== '#comments') return
+    const timer = window.setTimeout(() => {
+      document.getElementById('comments')?.scrollIntoView({ behavior: 'smooth' })
+    }, 150)
+    return () => window.clearTimeout(timer)
+  }, [location.hash])
+
   const heading = isDark ? 'text-white' : 'text-zinc-900'
   const muted = isDark ? 'text-zinc-400' : 'text-zinc-500'
   const faint = isDark ? 'text-zinc-500' : 'text-zinc-400'
 
   const handleLike = () => {
-    if (likeMutation.isPending) return
+    if (requireAccount() || likeMutation.isPending) return
     likeMutation.mutate(
       { liked },
       {
@@ -160,7 +189,7 @@ function PostBody({ article }: { article: ArticleDetail }) {
   }
 
   const handleBookmark = () => {
-    if (bookmarkMutation.isPending) return
+    if (requireAccount() || bookmarkMutation.isPending) return
     bookmarkMutation.mutate(
       { bookmarked },
       {
@@ -189,6 +218,10 @@ function PostBody({ article }: { article: ArticleDetail }) {
     }
   }
 
+  // Build the frontend view URL from the nodeId using the backend URL.
+  // The backend serves images at /storage/view/:nodeId?folder=uploads
+  const getViewUrl = (nodeId: string, folder = 'uploads') => `${import.meta.env.VITE_API_URL || '/api/v1'}/storage/view/${nodeId}?folder=${folder}`
+
   const actionProps = {
     likeCount,
     liked,
@@ -202,6 +235,9 @@ function PostBody({ article }: { article: ArticleDetail }) {
     bookmarked,
     onBookmark: handleBookmark,
     onShare: handleShare,
+    viewImage: (nodeId: string, folder = 'uploads') => getViewUrl(nodeId, folder),
+    canEdit,
+    onEdit: () => navigate(`/admin/articles/${article.slug}/edit`),
   }
 
   return (
@@ -289,11 +325,22 @@ function PostBody({ article }: { article: ArticleDetail }) {
         {/* ------------------------------------------------------- cover */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-7">
           {article.coverImage ? (
-            <img
-              src={article.coverImage}
-              alt={article.title}
-              className="w-full h-56 sm:h-80 lg:h-[420px] object-cover rounded-2xl"
-            />
+            <>
+              {/* Use the full cover URL (origin + path) */}
+              <img
+                src={article.coverImage}
+                alt={article.title}
+                className="w-full h-56 sm:h-80 lg:h-[420px] object-cover rounded-2xl"
+              />
+              {/* Storage view endpoint that proxies the image from MEGA by nodeId */}
+              <img
+                src={getViewUrl(article.coverImage.split('/').pop() ?? '')
+                  .replace('?folder=uploads', '')
+                  .replace(`${import.meta.env.VITE_API_URL || '/api/v1'}/storage/view/`, '')}
+                alt={article.title}
+                className="hidden"
+              />
+            </>
           ) : (
             <div className="w-full h-56 sm:h-80 lg:h-[420px] rounded-2xl bg-gradient-to-tr from-yellow-400/60 via-lime-400/40 to-emerald-500/60" />
           )}

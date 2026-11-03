@@ -13,9 +13,11 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
-import { useCategoriesQuery } from '../../api/queries'
+import { useLatestArticles } from '../../api/queries'
+import { useAuth } from '../../auth/AuthContext'
 import { useTheme } from './themedContext'
 import { ThemeToggle } from './ThemeToggle'
+import { useCategorySlots } from './categorySlots'
 
 /** Icon per category slug; categories added later fall back to a generic one. */
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
@@ -32,24 +34,38 @@ interface NavItem {
   badge?: string
 }
 
-const QUICK_TICKER = [
-  'BREAKING: Manchester City agree terms with 19yo Brazilian phenom',
-  'UCL DRAW: Real Madrid to face Bayern Munich in Quarter Finals',
-  'INJURY UPDATE: Saka cleared for weekend London Derby',
-  'GOLDEN BOOT RACE: Haaland reaches 25 goals in just 18 games',
-]
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
-  const { pathname } = useLocation()
-  const categories = useCategoriesQuery()
+  const { user, status, signOut } = useAuth()
+  const isAuthenticated = status === 'authenticated' && Boolean(user)
+  const isStaff = user != null && user.role !== 'READER'
 
-  // Primary navigation: Home plus every category the API actually has, so
-  // the row never advertises a section the site does not have a page for.
+  const { pathname } = useLocation()
+  // The navbar owns the first six categories; the sidebar and the page body
+  // use the remaining ones, so no category is ever listed twice.
+  const { nav: navCategories } = useCategorySlots()
+  // The flash-news ticker shows the newest published headline.
+  const latest = useLatestArticles(1)
+  const tickerHeadline = latest.data?.[0]
+
+  // Editorial links only render for staff (editor/admin); readers never see
+  // the dashboard on the public homepage. A storyless front page hides it
+  // too, so the prompt has nowhere to land.
+  const canSeeDashboard = isStaff && (latest.data?.length ?? 0) > 0
+
+  const today = new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date())
+
+  // Exactly six categories, no "More" dropdown: the rest of the newsroom
+  // lives in the sidebar rail and the body sections further down the page.
   const navItems: NavItem[] = [
     { label: 'HOME', icon: Flame, to: '/' },
-    ...(categories.data ?? []).map((category) => ({
+    ...navCategories.map((category) => ({
       label: category.name.toUpperCase(),
       icon: CATEGORY_ICONS[category.slug] ?? Newspaper,
       to: `/category/${category.slug}`,
@@ -122,20 +138,87 @@ export function Navbar() {
               className={`bg-yellow-400 text-black px-2 py-0.5 rounded font-black tracking-wider text-[10px] uppercase flex items-center gap-1 shrink-0 ${isDark ? '' : 'text-black'}`}
             >
               <TrendingUp className="w-3 h-3" /> Flash News
-            </span>
-            <div
-              className={`truncate animate-pulse ${
-                isDark ? 'text-zinc-300' : 'text-zinc-600'
-              }`}
-            >
-              {QUICK_TICKER[0]}
-            </div>
+            </span>            {tickerHeadline ? (
+              <Link
+                to={`/post/${tickerHeadline.slug}`}
+                className={`truncate transition-colors ${
+                  isDark
+                    ? 'text-zinc-300 hover:text-yellow-400'
+                    : 'text-zinc-600 hover:text-yellow-600'
+                }`}
+              >
+                {tickerHeadline.title}
+              </Link>
+            ) : (
+              <span className={`truncate ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                {latest.isLoading ? 'Loading the latest stories…' : 'No stories published yet'}
+              </span>
+            )}
           </div>
           <div className="hidden md:flex items-center space-x-4 text-xs shrink-0">
-            <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Oct 26, 2026</span>
-            <span className={isDark ? 'text-zinc-700' : 'text-zinc-300'}>|</span>            <button className={`transition-colors ${hoverText} ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              Live Scores (12)
-            </button>
+            <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>{today}</span>
+            <span className={isDark ? 'text-zinc-700' : 'text-zinc-300'}>|</span>
+            {isAuthenticated && user ? (
+              <>
+                {canSeeDashboard && isStaff && (
+                  <Link
+                    to="/admin"
+                    className={`transition-colors ${hoverText} ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
+                  >
+                    Dashboard
+                  </Link>
+                )}
+                <Link
+                  to="/library"
+                  className={`transition-colors ${hoverText} ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
+                >
+                  My library
+                </Link>
+                <Link
+                  to="/profile"
+                  title={`${user.name} · ${user.email}`}
+                  className={`font-bold transition-colors ${hoverText} ${
+                    pathname === '/profile'
+                      ? 'text-yellow-500'
+                      : isDark
+                        ? 'text-zinc-300'
+                        : 'text-zinc-700'
+                  }`}
+                >
+                  Hi, {user.name.split(' ')[0]}
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void signOut()}
+                  className={`transition-colors ${hoverText} ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className={`transition-colors ${hoverText} ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
+                >
+                  Sign in
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-full bg-yellow-400 px-3 py-1 font-black uppercase tracking-wider text-black transition-colors hover:bg-yellow-300"
+                >
+                  Sign up
+                </Link>
+                {canSeeDashboard && (
+                  <Link
+                    to="/admin"
+                    className={`transition-colors ${hoverText} ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
+                  >
+                    Admin Dashboard
+                  </Link>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -326,6 +409,96 @@ export function Navbar() {
               </Link>
             )
           })}
+
+          {/* Account actions */}
+          <div
+            className={`mt-2 space-y-1 border-t pt-3 ${
+              isDark ? 'border-zinc-800' : 'border-zinc-200'
+            }`}
+          >
+            {isAuthenticated && user ? (
+              <>
+                <p
+                  className={`truncate px-4 text-[11px] font-bold ${
+                    isDark ? 'text-zinc-500' : 'text-zinc-500'
+                  }`}
+                >
+                  {user.name} · {user.email}
+                </p>
+                {canSeeDashboard && isStaff && (
+                  <Link
+                    to="/admin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`block rounded-xl px-4 py-3 font-bold text-sm ${
+                      isDark ? 'text-zinc-300 hover:bg-zinc-900' : 'text-zinc-700 hover:bg-zinc-50'
+                    }`}
+                  >
+                    Dashboard
+                  </Link>
+                )}
+                <Link
+                  to="/profile"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block rounded-xl px-4 py-3 font-bold text-sm ${
+                    isDark ? 'text-zinc-300 hover:bg-zinc-900' : 'text-zinc-700 hover:bg-zinc-50'
+                  }`}
+                >
+                  My profile
+                </Link>
+                <Link
+                  to="/library"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block rounded-xl px-4 py-3 font-bold text-sm ${
+                    isDark ? 'text-zinc-300 hover:bg-zinc-900' : 'text-zinc-700 hover:bg-zinc-50'
+                  }`}
+                >
+                  My library
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false)
+                    void signOut()
+                  }}
+                  className={`block w-full rounded-xl px-4 py-3 text-left font-bold text-sm ${
+                    isDark ? 'text-zinc-300 hover:bg-zinc-900' : 'text-zinc-700 hover:bg-zinc-50'
+                  }`}
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block rounded-xl px-4 py-3 font-bold text-sm ${
+                    isDark ? 'text-zinc-300 hover:bg-zinc-900' : 'text-zinc-700 hover:bg-zinc-50'
+                  }`}
+                >
+                  Sign in
+                </Link>
+                <Link
+                  to="/signup"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block rounded-xl bg-yellow-400 px-4 py-3 text-center font-black uppercase tracking-wider text-sm text-black hover:bg-yellow-300"
+                >
+                  Sign up
+                </Link>
+                {canSeeDashboard && (
+                  <Link
+                    to="/admin"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`block rounded-xl px-4 py-3 font-bold text-sm ${
+                      isDark ? 'text-zinc-300 hover:bg-zinc-900' : 'text-zinc-700 hover:bg-zinc-50'
+                    }`}
+                  >
+                    Admin Dashboard
+                  </Link>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
     </header>

@@ -5,6 +5,7 @@ import { ArticlesModule } from './articles/articles.module';
 import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { CommentsModule } from './comments/comments.module';
+import { LiveScoresModule } from './live-scores/live-scores.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProfileModule } from './profile/profile.module';
 import { StorageModule } from './storage/storage.module';
@@ -23,6 +24,7 @@ import { TagsModule } from './tags/tags.module';
     TagsModule,
     ArticlesModule,
     CommentsModule,
+    LiveScoresModule,
   ],
   controllers: [AppController],
 })

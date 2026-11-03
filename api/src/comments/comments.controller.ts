@@ -35,6 +35,16 @@ export class CommentsController {
     return this.comments.findByArticle(articleId, query);
   }
 
+  @Get('comments/mine')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List the authenticated user’s own comments' })
+  findMine(
+    @CurrentUser('id') userId: string,
+    @Query() query: QueryCommentsDto,
+  ) {
+    return this.comments.findMine(userId, query);
+  }
+
   @Post('articles/:articleId/comments')
   @ApiBearerAuth()
   @ApiOperation({

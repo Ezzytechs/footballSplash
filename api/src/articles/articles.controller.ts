@@ -68,6 +68,20 @@ export class ArticlesController {
     return this.articles.findMine(userId, query);
   }
 
+  @Get('mine/:id')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get one article with its full body, drafts included',
+    description:
+      'For the author of the article; editors and admins can open any article.',
+  })
+  findMineOne(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.articles.findDetailForEditor(actor, id);
+  }
+
   @Public()
   @Get('popular')
   @ApiOperation({
@@ -88,6 +102,16 @@ export class ArticlesController {
     @Query() query: QueryArticlesDto,
   ) {
     return this.articles.findBookmarked(userId, query);
+  }
+
+  @Get('liked')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List articles liked by the authenticated user' })
+  findLiked(
+    @CurrentUser('id') userId: string,
+    @Query() query: QueryArticlesDto,
+  ) {
+    return this.articles.findLiked(userId, query);
   }
 
   @Public()

@@ -1,547 +1,304 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import {
   ArrowLeftRight,
   ArrowRight,
-  ChevronDown,
   Clock,
   Globe,
   MessageCircle,
+  Newspaper,
   Shirt,
   Trophy,
   type LucideIcon,
 } from 'lucide-react'
 import { useTheme } from './themedContext'
+import { useCategoryArticles } from '../../api/queries'
+import { useCategorySlots } from './categorySlots'
+import type { ArticleSummary, CategoryWithCount } from '../../api/types'
+import { formatCount, relativeTime } from '../../lib/format'
 
-interface Article {
-  id: string
-  tag: string
-  title: string
-  excerpt: string
-  time: string
-  comments: number
-  img: string
+/** Icon + accent per known category slug; new categories get sensible defaults. */
+const CATEGORY_STYLE: Record<string, { icon: LucideIcon; chip: string; accentText: string }> = {
+  'premier-league': { icon: Shirt, chip: 'bg-fuchsia-600 text-white', accentText: 'text-fuchsia-500' },
+  'champions-league': { icon: Trophy, chip: 'bg-emerald-500 text-black', accentText: 'text-emerald-500' },
+  transfers: { icon: ArrowLeftRight, chip: 'bg-yellow-400 text-black', accentText: 'text-yellow-500' },
+  'world-football': { icon: Globe, chip: 'bg-cyan-500 text-black', accentText: 'text-cyan-500' },
 }
 
-interface Category {
-  id: string
-  title: string
-  kicker: string
-  icon: LucideIcon
-  accentText: string
-  chip: string
-  articles: Article[]
+const FALLBACK_STYLE = {
+  icon: Newspaper,
+  chip: 'bg-yellow-400 text-black',
+  accentText: 'text-yellow-500',
 }
 
-const IMG = {
-  pitch:
-    'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&q=80&w=600',
-  stadium:
-    'https://images.unsplash.com/photo-1522778119026-d647f0596c20?auto=format&fit=crop&q=80&w=600',
-  ball: 'https://images.unsplash.com/photo-1560272564-66952055a4ab?auto=format&fit=crop&q=80&w=600',
-  crowd:
-    'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?auto=format&fit=crop&q=80&w=600',
-  action:
-    'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=600',
-  night:
-    'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?auto=format&fit=crop&q=80&w=600',
+/** At least this many categories get a section when the newsroom has them. */
+const MIN_SECTIONS = 5
+const MAX_SECTIONS = 6
+/** One lead story plus four recent rows = the five stories each section shows. */
+const PER_CATEGORY = 6
+const LIST_COUNT = 4
+
+function ArticleMeta({ article, className }: { article: ArticleSummary; className: string }) {
+  return (
+    <div className={`flex items-center gap-3 text-[11px] font-medium ${className}`}>
+      <span className="flex items-center gap-1">
+        <Clock className="w-3 h-3" />
+        {relativeTime(article.publishedAt ?? article.createdAt)}
+      </span>
+      <span className="flex items-center gap-1">
+        <MessageCircle className="w-3 h-3" />
+        {formatCount(article.commentCount)}
+      </span>
+    </div>
+  )
 }
 
-const CATEGORIES: Category[] = [
-  {
-    id: 'premier-league',
-    title: 'Premier League',
-    kicker: 'England · Matchweek 10',
-    icon: Shirt,
-    accentText: 'text-fuchsia-500',
-    chip: 'bg-fuchsia-600 text-white',
-    articles: [
-      {
-        id: 'pl-1',
-        tag: 'TITLE RACE',
-        title: 'Arsenal Go Top After Statement Win Over Manchester City',
-        excerpt:
-          'A relentless second-half display at the Emirates lifts the Gunners to the summit of the Premier League table.',
-        time: '40 min ago',
-        comments: 87,
-        img: IMG.stadium,
-      },
-      {
-        id: 'pl-2',
-        tag: 'TACTICS',
-        title: "Arteta's New-look Midfield Triangle Is Winning Arsenal Games",
-        excerpt:
-          'How the double pivot and roaming number eight unlocked the most stubborn low blocks in the league.',
-        time: '2 hours ago',
-        comments: 45,
-        img: IMG.ball,
-      },
-      {
-        id: 'pl-3',
-        tag: 'LIVERPOOL',
-        title: 'Liverpool Edge Everton Merseyside Derby In Six-Point Shootout',
-        excerpt:
-          'A 78th-minute winner settles a tense Goodison Park encounter as the reds climb into the top four.',
-        time: '5 hours ago',
-        comments: 132,
-        img: IMG.action,
-      },
-      {
-        id: 'pl-4',
-        tag: 'INJURIES',
-        title: 'Saka Passed Fit For Weekend London Derby After Scan Results',
-        excerpt:
-          'Medical staff confident the winger will be available after only a minor knock in midweek action.',
-        time: '6 hours ago',
-        comments: 39,
-        img: IMG.crowd,
-      },
-      {
-        id: 'pl-5',
-        tag: 'RANKINGS',
-        title: 'Power Rankings: Who Is Leading The Race For Premier League Player Of The Season?',
-        excerpt:
-          'Our writers rank the ten outstanding performers of the campaign so far, with one obvious leader.',
-        time: '8 hours ago',
-        comments: 64,
-        img: IMG.pitch,
-      },
-      {
-        id: 'pl-6',
-        tag: 'MANCHESTER UTD',
-        title: 'United Youth Academy Duo Handed First Team Starts In Cup Clash',
-        excerpt:
-          'The manager rewards impressive form from the under-21s with a place in a much-changed lineup.',
-        time: '10 hours ago',
-        comments: 51,
-        img: IMG.night,
-      },
-      {
-        id: 'pl-7',
-        tag: 'TRANSFERS',
-        title: 'Chelsea Prepare January Move For Bundesliga Goal Machine',
-        excerpt:
-          'Scouts have tracked the striker all season and a preliminary bid is expected before the window opens.',
-        time: '12 hours ago',
-        comments: 73,
-        img: IMG.ball,
-      },
-      {
-        id: 'pl-8',
-        tag: 'VAR',
-        title: 'Refereeing Body Admits Incorrect Offside Call In Newcastle Defeat',
-        excerpt:
-          'The professional game match officials board releases a rare public statement acknowledging the error.',
-        time: '14 hours ago',
-        comments: 210,
-        img: IMG.stadium,
-      },
-    ],
-  },
-  {
-    id: 'champions-league',
-    title: 'Champions League',
-    kicker: 'Europe · League Phase MD5',
-    icon: Trophy,
-    accentText: 'text-emerald-500',
-    chip: 'bg-emerald-500 text-black',
-    articles: [
-      {
-        id: 'ucl-1',
-        tag: 'MATCHDAY',
-        title: 'Real Madrid Stage Late Comeback Against Bayern In Quarter Final Classic',
-        excerpt:
-          'Two goals in stoppage time complete a famous European night at the Bernabéu.',
-        time: '1 hour ago',
-        comments: 178,
-        img: IMG.night,
-      },
-      {
-        id: 'ucl-2',
-        tag: 'DRAW',
-        title: 'UCL Quarter Final Draw Confirmed: PSG To Face Inter Milan',
-        excerpt:
-          'The seeded ties are set after this afternoon’s ceremony in Nyon, with two blockbuster matchups.',
-        time: '3 hours ago',
-        comments: 96,
-        img: IMG.crowd,
-      },
-      {
-        id: 'ucl-3',
-        tag: 'ANALYSIS',
-        title: 'How Barcelona’s Teenage Midfielder Dominated The European Stage',
-        excerpt:
-          'A data-driven look at the passing networks that tore apart an elite press.',
-        time: '5 hours ago',
-        comments: 58,
-        img: IMG.ball,
-      },
-      {
-        id: 'ucl-4',
-        tag: 'GOAL OF WEEK',
-        excerpt:
-          'A 30-yard dipping volley sends the away end into delirium and tops our weekly chart.',
-        title: 'Bicycle Kick Stunner Named Champions League Goal Of The Week',
-        time: '7 hours ago',
-        comments: 142,
-        img: IMG.action,
-      },
-      {
-        id: 'ucl-5',
-        tag: 'ENGLAND',
-        title: 'Arsenal Clinch Top Seed Status With Game To Spare',
-        excerpt:
-          'Finishing in the top two of the league phase guarantees home advantage in the second leg.',
-        time: '9 hours ago',
-        comments: 47,
-        img: IMG.pitch,
-      },
-      {
-        id: 'ucl-6',
-        tag: 'AWARDS',
-        title: 'Goalkeeper’s Penalty Heroics Earns Player Of The Matchday Honour',
-        excerpt:
-          'Three saves from four spot kicks decide a tense last-16 tie in Germany.',
-        time: '11 hours ago',
-        comments: 66,
-        img: IMG.stadium,
-      },
-      {
-        id: 'ucl-7',
-        tag: 'STATS',
-        title: 'Record-Breaking Night: Fastest Hat Trick In Competition History',
-        excerpt:
-          'The striker needed just eleven minutes to complete his three-goal haul off the bench.',
-        time: '13 hours ago',
-        comments: 121,
-        img: IMG.night,
-      },
-      {
-        id: 'ucl-8',
-        tag: 'FINANCE',
-        title: 'Broadcast Revenue Deal Set To Reshape European Football’s Balance Of Power',
-        excerpt:
-          'Clubs agree an improved distribution model that rewards deep tournament runs more generously.',
-        time: '16 hours ago',
-        comments: 34,
-        img: IMG.crowd,
-      },
-    ],
-  },
-  {
-    id: 'transfers',
-    title: 'Transfer Centre',
-    kicker: 'Rumours · Done deals · Loans',
-    icon: ArrowLeftRight,
-    accentText: 'text-yellow-500',
-    chip: 'bg-yellow-400 text-black',
-    articles: [
-      {
-        id: 'tr-1',
-        tag: 'BREAKING',
-        title: 'Manchester City Agree Terms With 19-Year-Old Brazilian Phenom',
-        excerpt:
-          'Personal terms are settled on a five-year contract as the clubs negotiate the final fee.',
-        time: '25 min ago',
-        comments: 245,
-        img: IMG.ball,
-      },
-      {
-        id: 'tr-2',
-        tag: 'RECORD BID',
-        title: '$140M Bid Submitted For Bundesliga Midfield Dynamo',
-        excerpt:
-          'Premier League giants are ready to shatter their transfer record ahead of the January window.',
-        time: '2 hours ago',
-        comments: 189,
-        img: IMG.action,
-      },
-      {
-        id: 'tr-3',
-        tag: 'DONE DEAL',
-        title: 'Inter Milan Complete Signing Of Argentine Winger On Four-Year Deal',
-        excerpt:
-          'The Nerazzurri beat Serie A rivals to the signature of the 22-year-old wide man.',
-        time: '4 hours ago',
-        comments: 77,
-        img: IMG.pitch,
-      },
-      {
-        id: 'tr-4',
-        tag: 'LOAN',
-        title: 'Chelsea Send Wonderkid On Season-Long Loan To Championship Side',
-        excerpt:
-          'The teenager will gain first-team minutes in a promotion-chasing side until May.',
-        time: '6 hours ago',
-        comments: 41,
-        img: IMG.stadium,
-      },
-      {
-        id: 'tr-5',
-        tag: 'AGENT NEWS',
-        title: 'Striker Hints At Premier League Move In Cryptic Social Media Post',
-        excerpt:
-          'A deleted story has fuelled speculation about a possible exit in the new year.',
-        time: '8 hours ago',
-        comments: 156,
-        img: IMG.night,
-      },
-      {
-        id: 'tr-6',
-        tag: 'SCOUTED',
-        title: 'Five Teenagers On Europe’s Biggest Clubs’ January Shortlists',
-        excerpt:
-          'Recruitment departments agree on the names most likely to spark a bidding war.',
-        time: '10 hours ago',
-        comments: 62,
-        img: IMG.crowd,
-      },
-      {
-        id: 'tr-7',
-        tag: 'EXIT',
-        title: 'Veteran Captain Confirms He Will Leave Club At End Of Season',
-        excerpt:
-          'An emotional press conference confirmed the end of an eight-year spell at the club.',
-        time: '12 hours ago',
-        comments: 133,
-        img: IMG.stadium,
-      },
-      {
-        id: 'tr-8',
-        tag: 'RUMOUR',
-        title: 'Bayern Munich Join Race For Premier League Winger As Fees Rise',
-        excerpt: 'The German champions move into pole position after fresh contact with intermediaries.',
-        time: '15 hours ago',
-        comments: 88,
-        img: IMG.ball,
-      },
-    ],
-  },
-  {
-    id: 'world-football',
-    title: 'World Football',
-    kicker: 'Serie A · La Liga · Bundesliga · More',
-    icon: Globe,
-    accentText: 'text-cyan-500',
-    chip: 'bg-cyan-500 text-black',
-    articles: [
-      {
-        id: 'wf-1',
-        tag: 'SERIE A',
-        title: 'Inter Milan Go Top After Five-Goal Thriller At San Siro',
-        excerpt:
-          'Lautaro Martínez scores two stunning volleys as Inter edge Napoli in a chaotic contest.',
-        time: '1 hour ago',
-        comments: 94,
-        img: IMG.night,
-      },
-      {
-        id: 'wf-2',
-        tag: 'LA LIGA',
-        title: 'Barcelona’s Young Guns Fire Them Clear At The Top Of La Liga',
-        excerpt:
-          'A 4-1 win extends the lead at the summit thanks to two assists from the academy graduate.',
-        time: '3 hours ago',
-        comments: 71,
-        img: IMG.action,
-      },
-      {
-        id: 'wf-3',
-        tag: 'BUNDESLIGA',
-        title: 'Bayern’s Striker Runs Riot With Four Goals In A Single Half',
-        excerpt:
-          'The Pole produces the most clinical display seen in Germany for a decade.',
-        time: '5 hours ago',
-        comments: 118,
-        img: IMG.ball,
-      },
-      {
-        id: 'wf-4',
-        tag: 'LIGUE 1',
-        title: 'Paris Saint-Germain’s Pressing Stats Are The Best In Europe',
-        excerpt:
-          'Numbers show the French side win the ball higher up the pitch than any other top-five league team.',
-        time: '7 hours ago',
-        comments: 43,
-        img: IMG.pitch,
-      },
-      {
-        id: 'wf-5',
-        tag: 'INTERNATIONAL',
-        title: 'World Cup Qualifying Draw Puts Champions On A Collision Course',
-        excerpt:
-          'The continent’s heavyweights are set for a deciding final matchday under the lights.',
-        time: '9 hours ago',
-        comments: 167,
-        img: IMG.crowd,
-      },
-      {
-        id: 'wf-6',
-        tag: 'COPA',
-        title: 'Argentina Name Squad For Crucial South American Qualifiers',
-        excerpt:
-          'Two uncapped players earn call-ups while several established stars return from injury.',
-        time: '11 hours ago',
-        comments: 82,
-        img: IMG.stadium,
-      },
-      {
-        id: 'wf-7',
-        tag: 'AFCON',
-        title: 'Hosts Unveil Four New Stadiums Ahead Of Continental Championship',
-        excerpt: 'Organisers confirm all venues will be ready three months before the opening ceremony.',
-        time: '13 hours ago',
-        comments: 37,
-        img: IMG.night,
-      },
-      {
-        id: 'wf-8',
-        tag: 'MARKET',
-        title: 'Asian Transfer Market Booms As Clubs Break Spending Records',
-        excerpt: 'Investment in playing squads has doubled over the last three seasons, new figures show.',
-        time: '17 hours ago',
-        comments: 29,
-        img: IMG.action,
-      },
-    ],
-  },
-]
-
-const PREVIEW_COUNT = 5
-
-function CategorySection({ category }: { category: Category }) {
+/**
+ * One category: heading with a See more link, its newest story as a wide lead
+ * card, then the next four as a compact list. Each block fetches its own
+ * category feed so a quiet category never empties the other sections.
+ */
+function CategoryBlock({
+  category,
+  style,
+}: {
+  category: CategoryWithCount
+  style: { icon: LucideIcon; chip: string; accentText: string }
+}) {
   const { theme } = useTheme()
   const isDark = theme === 'night'
-  const [expanded, setExpanded] = useState(false)
+  const feed = useCategoryArticles(category.slug, PER_CATEGORY)
 
-  const Icon = category.icon
-  const visible = expanded
-    ? category.articles
-    : category.articles.slice(0, PREVIEW_COUNT)
-  const remaining = category.articles.length - PREVIEW_COUNT
+  const articles = feed.data ?? []
+  const [featured, ...rest] = articles
+  const list = rest.slice(0, LIST_COUNT)
 
-  const card = isDark
-    ? 'bg-zinc-900/50 border-zinc-800/80'
-    : 'bg-white border-zinc-200/80'
+  const Icon = style.icon
+  const card = isDark ? 'bg-zinc-900/50 border-zinc-800/80' : 'bg-white border-zinc-200/80'
+  const rowBorder = isDark ? 'border-zinc-800/70' : 'border-zinc-200/70'
   const heading = isDark ? 'text-white' : 'text-zinc-900'
   const muted = isDark ? 'text-zinc-400' : 'text-zinc-500'
-  const meta = isDark ? 'text-zinc-500' : 'text-zinc-500'
-  const rowBorder = isDark ? 'border-zinc-800/70' : 'border-zinc-200/70'
-  const kicker = isDark ? 'text-zinc-500' : 'text-zinc-400'
-  const btn = isDark
+  const faint = isDark ? 'text-zinc-500' : 'text-zinc-400'
+  const seeMore = isDark
     ? 'border-zinc-700 bg-zinc-900/60 text-zinc-300 hover:border-yellow-400/60 hover:text-yellow-400'
     : 'border-zinc-200 bg-white text-zinc-700 hover:border-yellow-500/60 hover:text-yellow-600'
-  const viewAll = isDark
-    ? 'text-zinc-500 hover:text-yellow-400'
-    : 'text-zinc-400 hover:text-yellow-600'
 
   return (
-    <section id={category.id} className="mb-10 scroll-mt-32 lg:scroll-mt-44">
-      {/* Section heading */}
+    <section id={category.slug} className="scroll-mt-32">
+      {/* Heading + See more */}
       <div
-        className={`flex items-center justify-between gap-4 mb-4 pb-3 border-b ${rowBorder}`}
+        className={`flex flex-col gap-3 rounded-2xl border p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between lg:mb-0 lg:px-0 ${rowBorder}`}
       >
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex min-w-0 items-center gap-3">
           <span
-            className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center ${category.chip}`}
+            className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center ${style.chip}`}
           >
             <Icon className="w-4 h-4" />
           </span>
           <div className="min-w-0">
             <h2
-              className={`text-lg sm:text-xl font-extrabold uppercase tracking-tight leading-tight ${heading}`}
+              className={`text-base font-extrabold uppercase tracking-tight leading-tight ${heading}`}
             >
-              {category.title}
+              {category.name}
             </h2>
-            <p className={`text-[11px] font-semibold truncate ${kicker}`}>
-              {category.kicker}
+            <p className={`text-xs font-semibold truncate ${faint}`}>
+              {category._count?.articles ?? 0} published
             </p>
           </div>
         </div>
+
         <Link
-          to={`/category/${category.id}`}
-          className={`hidden sm:flex items-center gap-1 text-xs font-bold shrink-0 transition-colors ${viewAll}`}
+          to={`/category/${category.slug}`}
+          className={`shrink-0 flex items-center gap-1 rounded-full border px-3 py-1.5 text-[10px] sm:text-[11px] font-black uppercase tracking-wider transition-colors ${seeMore}`}
         >
-          VIEW ALL <ArrowRight className="w-3.5 h-3.5" />
+          See more <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
 
-      {/* Article list */}
-      <div className={`rounded-2xl border ${card} px-4 sm:px-5 py-1`}>
-        {visible.map((article, idx) => (
-          <article
-            key={article.id}
-            className={`group grid grid-cols-[104px_1fr] sm:grid-cols-[180px_1fr] gap-3 sm:gap-5 py-4 ${
-              idx === 0 ? '' : `border-t ${rowBorder}`
+      {feed.isLoading && (
+        <div className="space-y-3">
+          <div
+            className={`h-48 sm:h-56 rounded-2xl border animate-pulse ${isDark ? "border-zinc-800 bg-zinc-900/60" : "border-zinc-200 bg-zinc-50"}`}
+          />
+          <div
+            className={`h-20 rounded-2xl border animate-pulse ${isDark ? "border-zinc-800 bg-zinc-900/60" : "border-zinc-200 bg-zinc-50"}`}
+          />
+        </div>
+      )}
+
+      {!feed.isLoading && feed.isError && (
+        <div className={`rounded-2xl border p-4 text-center ${card}`}>
+          <p className={`text-xs font-bold ${heading}`}>
+            This category could not be loaded
+          </p>
+          <button
+            type="button"
+            onClick={() => void feed.refetch()}
+            className="mt-2 text-[11px] font-bold text-yellow-500 transition-colors hover:text-yellow-400"
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
+      {!feed.isLoading && !feed.isError && articles.length === 0 && (
+        <div
+          className={`mt-2 flex items-center gap-2 rounded-xl border px-2 py-1.5 text-xs ${card}`}
+        >
+          <Newspaper className={`w-3.5 h-3.5 ${muted}`} />
+          <span className={muted}>No stories yet</span>
+        </div>
+      )}
+
+      {featured && (
+        <>
+          {/* Lead story: wide card, image on the left at sm and up. */}
+          <Link
+            to={`/post/${featured.slug}`}
+            className={`group relative overflow-hidden rounded-2xl border transition-colors sm:grid sm:grid-cols-[1.05fr_1fr] ${card} ${
+              isDark
+                ? "hover:border-yellow-400/50 hover:shadow-lg hover:shadow-yellow-400/5"
+                : "hover:border-yellow-500/40 hover:shadow-lg hover:shadow-yellow-500/8"
             }`}
           >
-            <div className="relative h-16 sm:h-24 rounded-lg overflow-hidden shrink-0">
-              <img
-                src={article.img}
-                alt={article.title}
-                loading="lazy"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-              />
+            <div className="relative h-44 overflow-hidden sm:h-full">
+              {featured.coverImage ? (
+                <img
+                  src={featured.coverImage}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
+              ) : (
+                <div className="h-full w-full bg-linear-to-br from-yellow-400/70 to-emerald-500/70" />
+              )}
               <span
-                className={`absolute top-1.5 left-1.5 text-[8px] sm:text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${category.chip}`}
+                className={`absolute left-2.5 top-2.5 rounded-lg px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${style.chip}`}
               >
-                {article.tag}
+                {featured.category.name}
               </span>
             </div>
 
-            <div className="min-w-0 flex flex-col justify-between">
-              <h3
-                className={`text-[13px] sm:text-base font-bold leading-snug line-clamp-2 transition-colors group-hover:text-yellow-400 ${heading}`}
-              >
-                {article.title}
-              </h3>
-              <p
-                className={`hidden sm:block text-xs mt-1 line-clamp-2 ${muted}`}
-              >
-                {article.excerpt}
-              </p>
-              <div
-                className={`mt-2 flex items-center gap-3 sm:gap-4 text-[11px] font-medium ${meta}`}
-              >
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> {article.time}
-                </span>
-                <span className="flex items-center gap-1">
-                  <MessageCircle className="w-3 h-3" /> {article.comments}
-                </span>
-                <span
-                  className={`ml-auto hidden sm:flex items-center gap-1 font-bold opacity-0 group-hover:opacity-100 transition-opacity ${category.accentText}`}
+            <div className="flex flex-col justify-between p-4 sm:p-5">
+              <div>
+                <p
+                  className={`text-[10px] font-black uppercase tracking-widest ${style.accentText}`}
                 >
-                  READ <ArrowRight className="w-3 h-3" />
+                  Top story
+                </p>
+                <h3
+                  className={`mt-1.5 text-base font-extrabold leading-snug line-clamp-2 transition-colors sm:text-lg xl:text-xl ${
+                    isDark
+                      ? "text-white group-hover:text-yellow-400"
+                      : "text-zinc-900 group-hover:text-yellow-600"
+                  }`}
+                >
+                  {featured.title}
+                </h3>
+                {featured.excerpt && (
+                  <p
+                    className={`mt-1.5 hidden line-clamp-2 text-xs leading-relaxed sm:block ${muted}`}
+                  >
+                    {featured.excerpt}
+                  </p>
+                )}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <ArticleMeta article={featured} className={faint} />
+                <span
+                  className={`flex shrink-0 items-center gap-1 text-[10px] font-black uppercase tracking-wider ${style.accentText}`}
+                >
+                  Read <ArrowRight className="w-3 h-3" />
                 </span>
               </div>
             </div>
-          </article>
-        ))}
-      </div>
+          </Link>
 
-      {/* Show more / less */}
-      {remaining > 0 && (
-        <button
-          onClick={() => setExpanded((prev) => !prev)}
-          className={`mt-3 w-full py-3 rounded-xl border text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${btn}`}
-          aria-expanded={expanded}
-        >
-          {expanded
-            ? 'SHOW LESS'
-            : `SHOW MORE (${remaining} MORE STORIES)`}
-          <ChevronDown
-            className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`}
-          />
-        </button>
+          {/* The rest of the recent stories, as a compact list. */}
+          {list.length > 0 && (
+            <ul className={`mt-3 overflow-hidden rounded-xl border ${card}`}>
+              {list.map((article, index) => (
+                <li
+                  key={article.id}
+                  className={index === 0 ? "" : `border-t ${rowBorder}`}
+                >
+                  <Link
+                    to={`/post/${article.slug}`}
+                    className={`group flex items-center gap-3 p-3 transition-colors hover:bg-yellow-400/6 ${isDark ? "hover:bg-yellow-400/5" : ""}`}
+                  >
+                    <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded-lg">
+                      {article.coverImage ? (
+                        <img
+                          src={article.coverImage}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <div className="h-full w-full bg-linear-to-br from-yellow-400/60 to-emerald-500/60" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h4
+                        className={`text-sm font-bold leading-snug line-clamp-2 transition-colors ${isDark ? "text-white group-hover:text-yellow-400" : "text-zinc-900 group-hover:text-yellow-600"}`}
+                      >
+                        {article.title}
+                      </h4>
+                      <ArticleMeta
+                        article={article}
+                        className={`mt-1.5 text-xs ${faint}`}
+                      />
+                    </div>
+
+                    <ArrowRight
+                      className={`hidden w-4 h-4 shrink-0 self-center transition-transform group-hover:translate-x-1 sm:block ${faint}`}
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </section>
-  )
+  );
 }
 
 export function NewsCategories() {
   const { theme } = useTheme()
   const isDark = theme === 'night'
+  const slots = useCategorySlots()
+  const location = useLocation()
+
+  /**
+   * Categories this block renders. The navbar and sidebar own their own lists,
+   * so their leftovers go first; when fewer than five categories are left over,
+   * the most-published remaining ones fill the block up to five anyway.
+   *
+   * A category with no published stories is dropped entirely, so an empty
+   * category never leaves a blank heading, dash, or section block.
+   */
+  const pool = useMemo<CategoryWithCount[]>(() => {
+    const picked = slots.body
+      .filter((category) => (category._count?.articles ?? 0) > 0)
+      .slice(0, MAX_SECTIONS)
+    if (picked.length >= MIN_SECTIONS) return picked
+
+    const filler = [...slots.sidebar, ...slots.nav]
+      .filter((category) => !picked.some((item) => item.id === category.id))
+      .filter((category) => (category._count?.articles ?? 0) > 0)
+      .sort((a, b) => (b._count?.articles ?? 0) - (a._count?.articles ?? 0))
+
+    return [...picked, ...filler].slice(0, Math.min(MAX_SECTIONS, Math.max(MIN_SECTIONS, picked.length)))
+  }, [slots.body, slots.sidebar, slots.nav])
+
+  const published = pool.reduce((sum, category) => sum + (category._count?.articles ?? 0), 0)
+  const isOnHomepage = location.pathname === '/'
+  // Nothing to manage on a storyless front page; the dashboard link stays off.
+  const canSeeDashboard = published > 0 && isOnHomepage
+
+  if (!slots.isLoading && pool.length === 0) return null
 
   return (
     <div>
@@ -552,18 +309,67 @@ export function NewsCategories() {
           }`}
         >
           <span className="w-1.5 h-6 bg-yellow-400 rounded-full shrink-0" />
-          BY CATEGORY
+          NEWS BY CATEGORY
         </h2>
-        <span
-          className={`text-xs font-semibold shrink-0 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}
-        >
-          Updated 5 mins ago
+        <span className={`text-xs font-semibold shrink-0 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+          {slots.isLoading
+            ? 'Loading…'
+            : `${pool.length} section${pool.length === 1 ? '' : 's'}`}
+          {!slots.isLoading && pool.length > 1 && (
+            <span className="lg:hidden"> · swipe</span>
+          )}
         </span>
       </div>
 
-      {CATEGORIES.map((category) => (
-        <CategorySection key={category.id} category={category} />
-      ))}
+      {slots.isLoading && (
+        <div className="space-y-4">
+          {[0, 1].map((index) => (
+            <div
+              key={index}
+              className={`h-64 rounded-2xl border animate-pulse ${
+                isDark ? 'border-zinc-800 bg-zinc-900/50' : 'border-zinc-200 bg-white'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+
+      {!slots.isLoading && published === 0 && (
+        <div
+          className={`rounded-2xl border p-10 text-center ${
+            isDark ? 'border-zinc-800 bg-zinc-900/50' : 'border-zinc-200 bg-white'
+          }`}
+        >
+          <Newspaper className={`mx-auto w-8 h-8 ${isDark ? 'text-zinc-600' : 'text-zinc-300'}`} />
+          <p className={`mt-3 text-sm font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            The newsroom is quiet
+          </p>
+          <p className={`mt-1 text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+            Category sections appear as soon as stories are published.
+          </p>
+          {canSeeDashboard ? (
+            <Link
+              to="/admin"
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black uppercase tracking-wider text-black transition-colors hover:bg-yellow-300"
+            >
+              Open the dashboard <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          ) : null}
+        </div>
+      )}
+
+      {!slots.isLoading && published > 0 && (
+        <div className="space-y-6 pb-3 xl:pb-0">
+          {pool.map((category) => (
+            <div key={category.id}>
+              <CategoryBlock
+                category={category}
+                style={CATEGORY_STYLE[category.slug] ?? FALLBACK_STYLE}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

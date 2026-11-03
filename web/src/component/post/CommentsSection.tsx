@@ -1,5 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom'
 import { Heart, MessageCircle, Send } from 'lucide-react'
 import { useTheme } from '../home/themedContext'
 import {
@@ -8,6 +14,7 @@ import {
   useLikeComment,
 } from '../../api/queries'
 import { errorMessage, isAuthError } from '../../api/client'
+import { useAuth } from '../../auth/AuthContext'
 import type { CommentNode, CommentThread } from '../../api/types'
 import { initials, relativeTime } from '../../lib/format'
 import { useNotice } from '../../lib/notice-context'
@@ -19,8 +26,17 @@ export function CommentsSection({ articleId }: { articleId: string }) {
   const { theme } = useTheme()
   const isDark = theme === 'night'
   const notify = useNotice()
+  const location = useLocation()
+  const { status } = useAuth()
+  const signedIn = status === 'authenticated'
 
-  const [limit, setLimit] = useState(10)
+  // A deep link from the profile (?reply=<commentId>) opens that comment's
+  // reply box, so "Reply" lands on the right thread instead of the top of the
+  // page. Arriving that way loads a wider first page so the target is present.
+  const [searchParams] = useSearchParams()
+  const replyTo = searchParams.get('reply')
+
+  const [limit, setLimit] = useState(replyTo ? 50 : 10)
   const [draft, setDraft] = useState('')
   const { data, isLoading, isError } = useCommentsQuery(articleId, limit)
   const create = useCreateComment(articleId)
@@ -74,38 +90,73 @@ export function CommentsSection({ articleId }: { articleId: string }) {
         </h2>
       </div>
 
-      <form
-        onSubmit={submit}
-        className={`rounded-2xl border p-4 mb-6 ${surface}`}
-      >
-        <label htmlFor="comment-draft" className="sr-only">
-          Write a comment
-        </label>
-        <textarea
-          id="comment-draft"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          rows={3}
-          maxLength={2000}
-          placeholder="Share your take on this story…"
-          className={`w-full resize-y bg-transparent text-sm leading-relaxed placeholder:text-zinc-500 focus:outline-none ${
-            isDark ? 'text-zinc-200' : 'text-zinc-800'
-          }`}
-        />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className={`text-[11px] ${muted}`}>
-            {draft.length}/2000 · be specific, be civil
+      {signedIn || status === 'loading' ? (
+        <form
+          onSubmit={submit}
+          className={`rounded-2xl border p-4 mb-6 ${surface}`}
+        >
+          <label htmlFor="comment-draft" className="sr-only">
+            Write a comment
+          </label>
+          <textarea
+            id="comment-draft"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            rows={3}
+            maxLength={2000}
+            placeholder="Share your take on this story…"
+            className={`w-full resize-y bg-transparent text-sm leading-relaxed placeholder:text-zinc-500 focus:outline-none ${
+              isDark ? 'text-zinc-200' : 'text-zinc-800'
+            }`}
+          />
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className={`text-[11px] ${muted}`}>
+              {draft.length}/2000 · be specific, be civil
+            </p>
+            <button
+              type="submit"
+              disabled={create.isPending || !draft.trim()}
+              className="flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black uppercase tracking-wider text-black transition-all hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Send className="w-3.5 h-3.5" />
+              {create.isPending ? 'Posting…' : 'Post comment'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        /* Visitors get a way in instead of a form that would 401. */
+        <div className={`rounded-2xl border p-6 mb-6 text-center ${surface}`}>
+          <MessageCircle
+            className={`mx-auto w-6 h-6 ${isDark ? 'text-zinc-600' : 'text-zinc-300'}`}
+          />
+          <p className={`mt-3 text-sm font-bold ${heading}`}>
+            Join the discussion
           </p>
-          <button
-            type="submit"
-            disabled={create.isPending || !draft.trim()}
-            className="flex items-center gap-2 rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black uppercase tracking-wider text-black transition-all hover:bg-yellow-300 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Send className="w-3.5 h-3.5" />
-            {create.isPending ? 'Posting…' : 'Post comment'}
-          </button>
+          <p className={`mt-1 text-xs ${muted}`}>
+            Sign in to comment on this story, or create a free account.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Link
+              to="/login"
+              state={{ from: { pathname: location.pathname } }}
+              className="rounded-xl bg-yellow-400 px-4 py-2.5 text-xs font-black uppercase tracking-wider text-black transition-colors hover:bg-yellow-300"
+            >
+              Sign in
+            </Link>
+            <Link
+              to="/signup"
+              state={{ from: { pathname: location.pathname } }}
+              className={`rounded-xl border px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-colors ${
+                isDark
+                  ? 'border-zinc-700 text-zinc-300 hover:border-yellow-400/60 hover:text-yellow-400'
+                  : 'border-zinc-200 text-zinc-700 hover:border-yellow-500/60 hover:text-yellow-600'
+              }`}
+            >
+              Sign up
+            </Link>
+          </div>
         </div>
-      </form>
+      )}
 
       {isLoading && (
         <div className="space-y-4">
@@ -147,6 +198,7 @@ export function CommentsSection({ articleId }: { articleId: string }) {
               key={comment.id}
               comment={comment}
               articleId={articleId}
+              autoReply={replyTo === comment.id}
             />
           ))}
 
@@ -173,20 +225,44 @@ function CommentItem({
   comment,
   articleId,
   isReply = false,
+  autoReply = false,
 }: {
   comment: CommentThread | CommentNode
   articleId: string
   isReply?: boolean
+  /** Opened by a ?reply=<id> deep link from the profile. */
+  autoReply?: boolean
 }) {
   const { theme } = useTheme()
   const isDark = theme === 'night'
   const notify = useNotice()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { status } = useAuth()
+
+  const requiresAccount = () => {
+    if (status === 'authenticated') return false
+    navigate('/login', { state: { from: { pathname: location.pathname } } })
+    return true
+  }
 
   const replies = 'replies' in comment ? comment.replies : []
   const [liked, setLiked] = useState(false)
   const [likeCount, setLikeCount] = useState(comment._count.likes)
   const [replying, setReplying] = useState(false)
   const [replyDraft, setReplyDraft] = useState('')
+  const anchor = useRef<HTMLElement | null>(null)
+
+  // A linked comment opens its reply box straight away and scrolls itself into
+  // view, after the article's own #comments jump has happened.
+  useEffect(() => {
+    if (!autoReply || status !== 'authenticated') return
+    setReplying(true)
+    const timer = window.setTimeout(() => {
+      anchor.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [autoReply, status])
 
   const like = useLikeComment()
   const create = useCreateComment(articleId)
@@ -195,7 +271,7 @@ function CommentItem({
   const muted = isDark ? 'text-zinc-500' : 'text-zinc-400'
 
   const toggleLike = () => {
-    if (like.isPending) return
+    if (like.isPending || requiresAccount()) return
     like.mutate(
       { commentId: comment.id, liked, articleId },
       {
@@ -236,7 +312,11 @@ function CommentItem({
   }
 
   return (
-    <article className={`flex gap-3 ${isReply ? '' : ''}`}>
+    <article
+      ref={anchor}
+      className={`flex gap-3 ${isReply ? '' : ''}`}
+      data-comment-id={comment.id}
+    >
       <div
         className={`grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-tr from-yellow-400 to-emerald-500 text-xs font-black text-black`}
         aria-hidden="true"
@@ -286,7 +366,10 @@ function CommentItem({
             {!isReply && (
               <button
                 type="button"
-                onClick={() => setReplying((value) => !value)}
+                onClick={() => {
+                  if (requiresAccount()) return
+                  setReplying((value) => !value)
+                }}
                 className={`text-[11px] font-black uppercase tracking-wider transition-colors ${
                   isDark
                     ? 'text-zinc-500 hover:text-yellow-400'
@@ -315,6 +398,7 @@ function CommentItem({
               id={`reply-${comment.id}`}
               rows={2}
               maxLength={2000}
+              autoFocus={autoReply}
               value={replyDraft}
               onChange={(event) => setReplyDraft(event.target.value)}
               placeholder={`Reply to ${comment.user.name}…`}
