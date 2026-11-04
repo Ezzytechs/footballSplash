@@ -15,9 +15,20 @@ import { useAdminStyles } from './ui'
  * can return the draft. All three race and the first successful read is used,
  * which is what lets an admin or editor open a story they published
  * themselves (and an author open their own draft).
+ *
+ * The all-articles editor also accepts a numeric article id so every story
+ * can be opened directly. The id-by-id read race keeps drafts editable and
+ * published stories readable for editors and admins alike.
  */
 export function EditArticlePage() {
-  const { slug } = useParams()
+  // The edit link in the card carries an id (the all-articles list), but the
+  // original author-scoped route used a slug. This param is either a slug or a
+  // uuid, so drop any leading slash and pass both forms to the read race.
+  const raw = useParams().id ?? useParams().slug ?? ''
+  const id = raw.replace(/^\//, '')
+  const isId = /^[_a-z0-9-]{21,}$/i.test(id)
+  const slugParam = isId ? undefined : id
+  const idParam = isId ? id : undefined
   const navigate = useNavigate()
   const styles = useAdminStyles()
   const { user } = useAuth()
@@ -25,16 +36,14 @@ export function EditArticlePage() {
   // can pass it to the list page; reading state there would still be stale.
   const savedMessage = useRef('')
 
-  // The list lookup only supplies the record's id as one more race candidate;
-  // the page never blocks on it before reading the article.
+  // The all-articles editor passes the article id directly, so the form opens
+  // any story on the site. The id-scoped read race keeps drafts editable and
+  // published stories readable for editors and admins alike. The slug-only
+  // fallback still resolves published stories and own drafts.
   const { data: list } = useMyArticles({ limit: 50 })
-  const listItem = list?.items.find(
-    (item) => item.slug === slug || item.id === slug,
-  )
-
   const { data: article, isLoading } = useEditableArticleQuery(
-    slug,
-    listItem?.id,
+    slugParam,
+    idParam ?? list?.items.find((item: { id: string }) => item.id === id)?.id,
   )
 
   const back = () => navigate(-1)

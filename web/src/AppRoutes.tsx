@@ -192,6 +192,7 @@ export function AppRoutes() {
         >
           <Route index element={<OverviewPage />} />
           <Route path="articles" element={<ArticlesPage />} />
+          <Route path="articles/all" element={<ArticlesPage />} />
           <Route path="articles/:slug/edit" element={<EditArticlePage />} />
           <Route
             path="categories"

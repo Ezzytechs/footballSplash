@@ -2,10 +2,15 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { FileText, Plus } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
-import { useMyArticles } from '../api/admin'
+import { useAllArticles, useMyArticles } from '../api/admin'
 import type { ArticleStatus } from '../api/types'
 import { ArticleCard, EmptyState, PageHeader, SkeletonRows, useAdminStyles } from './ui'
 import { ArticleEditor } from './ArticleEditor'
+
+const STAFF_VIEWS: Array<{ label: string; value: 'my' | 'all' }> = [
+  { label: 'All articles', value: 'all' },
+  { label: 'My articles', value: 'my' },
+]
 
 const FILTERS: Array<{ label: string; value: ArticleStatus | '' }> = [
   { label: 'All', value: '' },
@@ -19,8 +24,16 @@ export function ArticlesPage() {
   const styles = useAdminStyles()
   const { user } = useAuth()
 
+  // `mine` lists only the signed-in author's stories (drafts included).
+  // `all` lists every article on the site, regardless of author.
+  const isAdminOrEditor = user?.role === 'ADMIN' || user?.role === 'EDITOR'
+
   const [status, setStatus] = useState<ArticleStatus | ''>('')
   const [search, setSearch] = useState('')
+  // Staff land on the whole site; an author has only their own room.
+  const [view, setView] = useState<'my' | 'all'>(
+    isAdminOrEditor ? 'all' : 'my',
+  )
   const [editorOpen, setEditorOpen] = useState(false)
   const [notice, setNotice] = useState('')
 
@@ -37,14 +50,21 @@ export function ArticlesPage() {
     navigate(location.pathname, { replace: true, state: null })
   }, [location.state, location.pathname, navigate])
 
-  const { data, isLoading, isError, error, refetch } = useMyArticles({
-    status,
-    search: search.trim(),
-    limit: 50,
-  })
+  // `mine` lists only the signed-in author's stories (drafts included).
+  // `all` lists every article on the site, regardless of author, and is only
+  // opened for editors and admins. Both hooks stay mounted and one is disabled
+  // so switching rooms never fires a wasted request. Status and search are
+  // applied server-side on either list.
+  const params = { status, search: search.trim(), limit: 50 }
+  const viewingAll = view === 'all' && isAdminOrEditor
+  const mineQuery = useMyArticles(params, !viewingAll)
+  const allQuery = useAllArticles(params, viewingAll)
+  const { data, isLoading, isError, error, refetch } = viewingAll
+    ? allQuery
+    : mineQuery
 
   const articles = data?.items ?? []
-  const canWrite = user?.role !== 'READER'
+  const canWrite = isAdminOrEditor
 
   return (
     <div>
@@ -54,7 +74,7 @@ export function ArticlesPage() {
         hint={
           user?.role === 'AUTHOR'
             ? 'Your drafts and submitted stories.'
-            : 'Every story you write or manage.'
+            : 'Every story on the site, or just the ones you wrote.'
         }
         action={
           canWrite ? (
@@ -76,20 +96,34 @@ export function ArticlesPage() {
         </p>
       ) : null}
 
-      {/* Filters */}
+      {/* View filter: the whole site or only this author's room. Staff only. */}
+      {isAdminOrEditor && (
+        <div className="mt-5 flex flex-wrap items-center gap-2">
+          {STAFF_VIEWS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setView(option.value)}
+              aria-pressed={view === option.value}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-black uppercase tracking-wider transition-colors ${view === option.value ? 'bg-yellow-400 text-black' : styles.isDark ? 'border border-zinc-800 text-zinc-400 hover:text-yellow-400' : 'border border-zinc-200 text-zinc-600 hover:border-yellow-500/60'}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Filters. Archived stories live outside an author's room, so that pill
+          is staff-only. */}
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        {FILTERS.map((filter) => (
+        {FILTERS.filter(
+          (filter) => filter.value !== 'ARCHIVED' || isAdminOrEditor,
+        ).map((filter) => (
           <button
             key={filter.label}
             type="button"
             onClick={() => setStatus(filter.value)}
-            className={`rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-wider transition-colors ${
-              status === filter.value
-                ? 'bg-yellow-400 text-black'
-                : styles.isDark
-                  ? 'border border-zinc-800 text-zinc-400 hover:text-yellow-400'
-                  : 'border border-zinc-200 text-zinc-600 hover:border-yellow-500/60'
-            }`}
+            className={`rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-wider transition-colors ${status === filter.value ? 'bg-yellow-400 text-black' : styles.isDark ? 'border border-zinc-800 text-zinc-400 hover:text-yellow-400' : 'border border-zinc-200 text-zinc-600 hover:border-yellow-500/60'}`}
           >
             {filter.label}
           </button>
@@ -104,7 +138,7 @@ export function ArticlesPage() {
           id="article-search"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search your articles…"
+          placeholder={viewingAll ? 'Search all articles…' : 'Search your articles…'}
           className={styles.input}
         />
       </div>
@@ -113,7 +147,9 @@ export function ArticlesPage() {
 
       {!isLoading && isError && (
         <div className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-8 text-center">
-          <p className="text-sm font-bold text-red-500">Could not load your articles.</p>
+          <p className="text-sm font-bold text-red-500">
+            Could not load {viewingAll ? 'the articles' : 'your articles'}.
+          </p>
           <p className="mt-1 text-xs text-red-400">{(error as Error).message}</p>
           <button
             type="button"
@@ -128,11 +164,13 @@ export function ArticlesPage() {
       {!isLoading && !isError && articles.length === 0 && (
         <EmptyState
           icon="📰"
-          heading={search.trim() ? 'No matches' : 'No articles yet'}
+          heading={search.trim() || status ? 'No matches' : 'No articles yet'}
           body={
-            search.trim()
+            search.trim() || status
               ? 'Try a different title or clear the filters.'
-              : 'Your first story starts here.'
+              : viewingAll
+                ? 'No stories on the site yet.'
+                : 'Your first story starts here.'
           }
           action={
             canWrite ? (

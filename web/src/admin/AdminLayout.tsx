@@ -28,6 +28,7 @@ const MANAGERS: UserRole[] = ['ADMIN', 'EDITOR']
 const NAV_ITEMS: AdminNavItem[] = [
   { to: '/admin', label: 'Overview', icon: LayoutDashboard },
   { to: '/admin/articles', label: 'Articles', icon: FileText },
+//  { to: '/admin/articles/all', label: 'All articles', icon: FileText, roles: MANAGERS },
   { to: '/admin/categories', label: 'Categories', icon: FolderTree, roles: MANAGERS },
   { to: '/admin/tags', label: 'Tags', icon: Tags, roles: MANAGERS },
   { to: '/admin/users', label: 'Users', icon: Users, roles: ['ADMIN'] },

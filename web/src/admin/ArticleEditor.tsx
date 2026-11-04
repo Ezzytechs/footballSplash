@@ -118,8 +118,10 @@ export function ArticleEditor({ article, onClose, onSaved }: ArticleEditorProps)
 
   const busy = createMutation.isPending || updateMutation.isPending
 
-  // Statuses an author may pick: their draft/review states plus whatever the
-  // story already is, so an existing story never renders an empty select.
+  // Only staff changes the status of a story - an editor or admin can set
+  // DRAFT, REVIEW, PUBLISHED or ARCHIVED. Authors keep their own story as it
+  // is and can only move between DRAFT and REVIEW, so they never publish
+  // directly from the editor.
   const statusOptions: ArticleStatus[] = isAuthor
     ? (['DRAFT', 'REVIEW', status] as ArticleStatus[]).filter(
         (value, index, all) => all.indexOf(value) === index,

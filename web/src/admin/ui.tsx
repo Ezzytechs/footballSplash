@@ -187,15 +187,7 @@ export function ArticleCard({ article, canEdit = false }: ArticleCardProps) {
           {article.excerpt ? (
             <p className={`mt-1 line-clamp-2 text-xs ${styles.muted}`}>{article.excerpt}</p>
           ) : null}
-        </div>
-        {canEdit ? (
-          <Link
-            to={`/admin/articles/${article.slug}/edit`}
-            className="shrink-0 rounded-lg bg-yellow-400 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-black transition-colors hover:bg-yellow-300"
-          >
-            Edit
-          </Link>
-        ) : null}
+        </div>          {canEdit ? (            <Link              to={`/admin/articles/${article.id}/edit`}              className="shrink-0 rounded-lg bg-yellow-400 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-black transition-colors hover:bg-yellow-300"            >              Edit            </Link>          ) : null}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

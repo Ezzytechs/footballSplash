@@ -14,7 +14,11 @@ import { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { uniqueSlug } from '../common/utils/slug.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateArticleDto } from './dto/create-article.dto';
-import { QueryArticlesDto, QueryMyArticlesDto } from './dto/query-articles.dto';
+import {
+  QueryAllArticlesDto,
+  QueryArticlesDto,
+  QueryMyArticlesDto,
+} from './dto/query-articles.dto';
 import { ShareArticleDto } from './dto/share-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
@@ -64,19 +68,81 @@ export class ArticlesService {
     private readonly notifier: PublishNotifierService,
   ) {}
 
+  /** Public list: only the stories the site renders for readers. The slug route
+   * keeps single-article published access separate.
+   */
   async findPublished(
     query: QueryArticlesDto,
     overrides: { category?: string; tag?: string } = {},
   ) {
+    const where = this.buildPublishedWhere(query, overrides);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = this.buildPublishedWhere(query, overrides);
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.article.findMany({
+        where,
+        select: ARTICLE_LIST_SELECT,
+        orderBy: [{ status: 'asc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.article.count({ where }),
+    ]);
+    return {
+      items: items.map((article) => formatArticle(article)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /** Everything on the site — drafts, in review and published. Editors and admins see
+   * every status; readers only get `PUBLISHED`. A single query layer keeps the
+   * pagination, sorting and serialization identical for both roles.
+   *
+   * The `mine` endpoint stays the only publisher-scoped read: a draft must never
+   * leak outside its own room, and an already-published story is still reachable
+   * under /articles so it can be edited alongside its siblings.
+   */
+  /** Every article on the site, regardless of status. Editors and admins only.
+   * Authors never reach this: the route is bearer-authed and its guards only
+   * hand it ADMIN | EDITOR, and its `authorId` filter is ignored for staff.
+   */
+  async findAll(query: QueryAllArticlesDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const term = query.search?.trim();
+
+    const where: Prisma.ArticleWhereInput = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    if (query.category) {
+      where.category = { slug: query.category };
+    }
+
+    if (query.tag) {
+      where.tags = { some: { tag: { slug: query.tag } } };
+    }
+
+    if (term) {
+      where.OR = [
+        { title: { contains: term, mode: 'insensitive' } },
+        { excerpt: { contains: term, mode: 'insensitive' } },
+        { content: { contains: term, mode: 'insensitive' } },
+      ];
+    }
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.article.findMany({
         where,
         select: ARTICLE_LIST_SELECT,
-        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ status: 'asc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -183,6 +249,78 @@ export class ArticlesService {
   }
 
   async findMine(userId: string, query: QueryMyArticlesDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where: Prisma.ArticleWhereInput = { authorId: userId };
+
+    // A non-staff author is fixed to their own room (drafts, submitted and
+    // published stories). A staff author (editor/admin) lists every status.
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const isStaff =
+      account?.role === UserRole.ADMIN || account?.role === UserRole.EDITOR;
+
+    if (isStaff) {
+      if (query.status) {
+        where.status = query.status;
+      }
+    } else if (query.status === ArticleStatus.ARCHIVED) {
+      // Archived stories live outside an author's room.
+      where.status = { in: [] };
+    } else {
+      where.status =
+        query.status ?? {
+          in: [
+            ArticleStatus.DRAFT,
+            ArticleStatus.REVIEW,
+            ArticleStatus.PUBLISHED,
+          ],
+        };
+    }
+
+    if (query.category) {
+      where.category = { slug: query.category };
+    }
+
+    if (query.tag) {
+      where.tags = { some: { tag: { slug: query.tag } } };
+    }
+
+    this.applySearch(where, query.search);
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.article.findMany({
+        where,
+        select: ARTICLE_LIST_SELECT,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.article.count({ where }),
+    ]);
+
+    return {
+      items: items.map((article) => formatArticle(article)),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /** A staff author's copy of the article - drafts, submitted stories and live
+   * stories - for the archive. Drafts and already-published items are never
+   * filtered out by status here.
+   *
+   * Editors and admins are staff authors, so the `authorId` match is enough;
+   * authors are only ever given their own stories by the route guards, and a
+   * draft cannot be read anywhere else.
+   */
+  async findStaffMine(userId: string, query: QueryMyArticlesDto) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const where: Prisma.ArticleWhereInput = { authorId: userId };

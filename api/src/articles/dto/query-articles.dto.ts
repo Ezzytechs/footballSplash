@@ -55,3 +55,6 @@ export class QueryMyArticlesDto extends QueryArticlesDto {
   @IsEnum(ArticleStatus)
   status?: ArticleStatus;
 }
+
+/** Staff listing for `/articles/all`: the public query plus a status filter. */
+export class QueryAllArticlesDto extends QueryMyArticlesDto {}

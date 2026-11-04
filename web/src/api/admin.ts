@@ -31,12 +31,40 @@ export interface MyArticlesParams {
 /** GET /articles/mine — the signed-in author's articles, drafts included. */
 export function useMyArticles(
   params: MyArticlesParams,
+  enabled = true,
 ): UseQueryResult<Paginated<ArticleSummary>> {
   const { status = '', search = '', page = 1, limit = 10 } = params
   return useQuery({
     queryKey: ['my-articles', status, search, page, limit],
+    enabled,
     queryFn: async () => {
       const { data } = await api.get<Paginated<ArticleSummary>>('/articles/mine', {
+        params: {
+          page,
+          limit,
+          ...(status ? { status } : {}),
+          ...(search ? { search } : {}),
+        },
+      })
+      return data
+    },
+  })
+}
+
+/** GET /articles/mine/staff — anything a staff author has written, status
+ * groups kept intact, so an editor or admin can archive their own room.
+ *
+ * Authors are excluded here: their `mine` rows already include their own
+ * drafts and submitted stories, and a draft never escapes that room.
+ */
+export function useStaffMine(
+  params: MyArticlesParams,
+): UseQueryResult<Paginated<ArticleSummary>> {
+  const { status = '', search = '', page = 1, limit = 10 } = params
+  return useQuery({
+    queryKey: ['staff-mine', status, search, page, limit],
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<ArticleSummary>>('/articles/mine/staff', {
         params: {
           page,
           limit,
@@ -143,6 +171,7 @@ export function useCreateArticle() {
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['my-articles'] })
+      void client.invalidateQueries({ queryKey: ['all-articles'] })
       void client.invalidateQueries({ queryKey: ['profile-stats'] })
       void client.invalidateQueries({ queryKey: ['latest'] })
       void client.invalidateQueries({ queryKey: ['categories'] })
@@ -163,6 +192,7 @@ export function useUpdateArticle() {
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['my-articles'] })
+      void client.invalidateQueries({ queryKey: ['all-articles'] })
       void client.invalidateQueries({ queryKey: ['latest'] })
       void client.invalidateQueries({ queryKey: ['popular'] })
       void client.invalidateQueries({ queryKey: ['categories'] })
@@ -180,6 +210,7 @@ export function useDeleteArticle() {
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['my-articles'] })
+      void client.invalidateQueries({ queryKey: ['all-articles'] })
       void client.invalidateQueries({ queryKey: ['profile-stats'] })
       void client.invalidateQueries({ queryKey: ['latest'] })
       void client.invalidateQueries({ queryKey: ['categories'] })
@@ -235,6 +266,48 @@ export function useUploadFile() {
         { headers: { 'Content-Type': 'multipart/form-data' } },
       )
       return data.data
+    },
+  })
+}
+
+/**
+ * GET /articles/all — every article on the site (DRAFT, REVIEW,
+ * PUBLISHED and ARCHIVED), filterable by status or search term.
+ *
+ * Present on the_admin dashboard so an editor or admin can list, edit and
+ * publish any story, regardless of who wrote it.
+ */
+export interface AllArticlesParams extends MyArticlesParams {
+  /** Restrict the list to a single status (DRAFT, REVIEW, PUBLISHED, ARCHIVED). */
+  status?: ArticleStatus | ''
+  /** Free-text search across title, excerpt and body.
+   *
+   * A bare word matches the summary fields, a whole sentence is treated as
+   * a body search, and a leading `#` looks the tag up by name.
+   */
+  search?: string
+  page?: number
+  limit?: number
+}
+
+export function useAllArticles(
+  params: AllArticlesParams,
+  enabled = true,
+): UseQueryResult<Paginated<ArticleSummary>> {
+  const { status = '', search = '', page = 1, limit = 10 } = params
+  return useQuery({
+    queryKey: ['all-articles', status, search, page, limit],
+    enabled,
+    queryFn: async () => {
+      const { data } = await api.get<Paginated<ArticleSummary>>('/articles/all', {
+        params: {
+          page,
+          limit,
+          ...(status ? { status } : {}),
+          ...(search ? { search } : {}),
+        },
+      })
+      return data
     },
   })
 }

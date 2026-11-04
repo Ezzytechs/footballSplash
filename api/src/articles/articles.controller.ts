@@ -19,7 +19,11 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/jwt-payload.interface';
 import { ArticlesService } from './articles.service';
 import { CreateArticleDto } from './dto/create-article.dto';
-import { QueryArticlesDto, QueryMyArticlesDto } from './dto/query-articles.dto';
+import {
+  QueryAllArticlesDto,
+  QueryArticlesDto,
+  QueryMyArticlesDto,
+} from './dto/query-articles.dto';
 import { ShareArticleDto } from './dto/share-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
@@ -66,6 +70,30 @@ export class ArticlesController {
     @Query() query: QueryMyArticlesDto,
   ) {
     return this.articles.findMine(userId, query);
+  }
+
+  @Get('all')
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'List every article on the site, including drafts',
+    description:
+      'Editors and admins only. Supports the same status, search, category and tag filters as the author listing.',
+  })
+  findAllAdmin(@Query() query: QueryAllArticlesDto) {
+    return this.articles.findAll(query);
+  }
+
+  @Get('mine/staff')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'List everything an editor or admin has written, with status groups kept intact.',
+  })
+  findStaffMine(
+    @CurrentUser('id') userId: string,
+    @Query() query: QueryMyArticlesDto,
+  ) {
+    return this.articles.findStaffMine(userId, query);
   }
 
   @Get('mine/:id')
@@ -195,7 +223,7 @@ export class ArticlesController {
   }
 
   @Post()
-  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.AUTHOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Create an article',
@@ -226,12 +254,12 @@ export class ArticlesController {
   }
 
   @Delete(':id')
-  @Roles(UserRole.ADMIN, UserRole.EDITOR, UserRole.AUTHOR)
+  @Roles(UserRole.ADMIN, UserRole.EDITOR)
   @ApiBearerAuth()
   @ApiOperation({
     summary: 'Delete an article',
     description:
-      'Authors can delete their own articles; editors and admins can delete any article.',
+      'Editors and admins can delete any article; authors cannot.',
   })
   remove(
     @CurrentUser() actor: AuthenticatedUser,
